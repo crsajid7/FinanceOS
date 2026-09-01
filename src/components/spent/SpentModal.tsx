@@ -1,0 +1,621 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  X,
+  Users,
+  HandCoins,
+  Sparkles,
+  Check,
+  Plus,
+  ArrowRight,
+  AlertCircle,
+} from 'lucide-react';
+import { useFinance } from '../../context/FinanceContext';
+import { StandardCategory } from '../../types/finance';
+import { getCategorySuggestionForAmount, getFrequentPeople } from '../../services/smartSuggestions';
+import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
+import { validateSplit } from '../../services/accountingEngine';
+import confetti from 'canvas-confetti';
+
+const STANDARD_CATEGORIES: { name: StandardCategory; emoji: string }[] = [
+  { name: 'Food', emoji: '🍔' },
+  { name: 'Groceries', emoji: '🛒' },
+  { name: 'Transport', emoji: '🛺' },
+  { name: 'College', emoji: '📚' },
+  { name: 'Entertainment', emoji: '🎬' },
+  { name: 'Personal', emoji: '👕' },
+  { name: 'Rent', emoji: '🏠' },
+  { name: 'Other', emoji: '📦' },
+];
+
+interface SpentModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'NL';
+
+export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
+  const { transactions, people, addTransaction, accounts } = useFinance();
+  const [mode, setMode] = useState<Mode>('EXPENSE');
+
+  const [amountStr, setAmountStr] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Food');
+  const [note, setNote] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+
+  const [userShareStr, setUserShareStr] = useState<string>('');
+  const [splitFriends, setSplitFriends] = useState<{ personId: string; personName: string; amountStr: string }[]>([]);
+  const [newFriendName, setNewFriendName] = useState<string>('');
+
+  const [lendingPersonId, setLendingPersonId] = useState<string>('');
+  const [lendingPersonName, setLendingPersonName] = useState<string>('');
+  const [expectedDate, setExpectedDate] = useState<string>('');
+
+  const [nlText, setNlText] = useState<string>('');
+  const [nlError, setNlError] = useState<string>('');
+
+  const [errorMsg, setErrorMsg] = useState<string>('');
+  const [suggestedCat, setSuggestedCat] = useState<string | undefined>();
+
+  const amountInputRef = useRef<HTMLInputElement>(null);
+  const nlInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode('EXPENSE');
+      setAmountStr('');
+      setSelectedCategory('Food');
+      setNote('');
+      setUserShareStr('');
+      setSplitFriends([]);
+      setLendingPersonId('');
+      setLendingPersonName('');
+      setExpectedDate('');
+      setNlText('');
+      setNlError('');
+      setErrorMsg('');
+      if (accounts.length > 0) {
+        setSelectedAccountId(accounts[0].id);
+      }
+      setTimeout(() => {
+        amountInputRef.current?.focus();
+      }, 50);
+    }
+  }, [isOpen, accounts]);
+
+  const numericAmount = parseFloat(amountStr) || 0;
+  useEffect(() => {
+    if (numericAmount > 0 && mode === 'EXPENSE') {
+      const suggestion = getCategorySuggestionForAmount(numericAmount, transactions);
+      setSuggestedCat(suggestion);
+    } else {
+      setSuggestedCat(undefined);
+    }
+  }, [numericAmount, transactions, mode]);
+
+  useEffect(() => {
+    if (mode === 'SPLIT' && numericAmount > 0) {
+      const friendCount = splitFriends.length;
+      if (friendCount > 0) {
+        const equalShare = Math.round(numericAmount / (friendCount + 1));
+        setUserShareStr(String(equalShare));
+        setSplitFriends(prev =>
+          prev.map(f => ({ ...f, amountStr: String(equalShare) }))
+        );
+      } else {
+        setUserShareStr(String(Math.round(numericAmount / 2)));
+      }
+    }
+  }, [numericAmount, mode, splitFriends.length]);
+
+  if (!isOpen) return null;
+
+  const frequentPeople = getFrequentPeople(transactions, people, 4);
+
+  const handleAddSplitFriend = (personId: string, personName: string) => {
+    if (splitFriends.some(f => f.personId === personId || f.personName.toLowerCase() === personName.toLowerCase())) {
+      return;
+    }
+    const nextFriends = [...splitFriends, { personId, personName, amountStr: '' }];
+    const totalCount = nextFriends.length + 1;
+    const equalShare = Math.round(numericAmount / totalCount);
+
+    setUserShareStr(String(equalShare));
+    setSplitFriends(nextFriends.map(f => ({ ...f, amountStr: String(equalShare) })));
+  };
+
+  const handleParseNL = () => {
+    setNlError('');
+    const parsed = parseNaturalLanguage(nlText);
+    if (!parsed) {
+      setNlError('Could not understand. Try: "Spent 50 on food" or "Lent 500 to Karthick"');
+      return;
+    }
+
+    setAmountStr(String(parsed.amount));
+    setSelectedCategory(parsed.category || 'Food');
+    setNote(parsed.note || '');
+
+    if (parsed.type === 'SPLIT') {
+      setMode('SPLIT');
+      setUserShareStr(String(parsed.userShare || Math.round(parsed.amount / 2)));
+      if (parsed.splits && parsed.splits.length > 0) {
+        setSplitFriends(parsed.splits.map(s => ({
+          personId: '',
+          personName: s.personName,
+          amountStr: String(s.amount),
+        })));
+      }
+    } else if (parsed.type === 'LENDING') {
+      setMode('LENDING');
+      setLendingPersonName(parsed.personName || '');
+    } else {
+      setMode('EXPENSE');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (numericAmount <= 0) {
+      setErrorMsg('Please enter a valid amount greater than ₹0');
+      return;
+    }
+
+    try {
+      if (mode === 'EXPENSE') {
+        await addTransaction({
+          type: 'EXPENSE',
+          amount: numericAmount,
+          category: selectedCategory,
+          note: note.trim() || undefined,
+          accountId: selectedAccountId,
+        });
+      } else if (mode === 'SPLIT') {
+        const userShare = parseFloat(userShareStr) || 0;
+        const friendShares = splitFriends.map(f => parseFloat(f.amountStr) || 0);
+
+        if (splitFriends.length === 0) {
+          setErrorMsg('Add at least one friend to split with.');
+          return;
+        }
+
+        const splitVal = validateSplit(numericAmount, userShare, friendShares);
+        if (!splitVal.isValid) {
+          setErrorMsg(splitVal.errorMessage || 'Split shares do not add up to total paid.');
+          return;
+        }
+
+        await addTransaction({
+          type: 'SPLIT',
+          amount: numericAmount,
+          userShare,
+          category: selectedCategory,
+          note: note.trim() || undefined,
+          accountId: selectedAccountId,
+          splits: splitFriends.map((f, i) => ({
+            personId: f.personId,
+            personName: f.personName,
+            amount: friendShares[i],
+          })),
+        });
+      } else if (mode === 'LENDING') {
+        const targetName = lendingPersonName.trim() || (people.find(p => p.id === lendingPersonId)?.name);
+        if (!targetName) {
+          setErrorMsg('Please select or enter the person you lent money to.');
+          return;
+        }
+
+        await addTransaction({
+          type: 'LENDING',
+          amount: numericAmount,
+          category: 'Other',
+          personId: lendingPersonId || undefined,
+          personName: targetName,
+          expectedDate: expectedDate || undefined,
+          note: note.trim() || undefined,
+          accountId: selectedAccountId,
+        });
+      }
+
+      try {
+        confetti({
+          particleCount: 25,
+          spread: 45,
+          origin: { y: 0.85 },
+          colors: ['#10b981', '#6366f1', '#3b82f6'],
+        });
+      } catch {
+        // Fallback
+      }
+
+      onClose();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save transaction.';
+      setErrorMsg(message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="w-full sm:max-w-md theme-card rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+        
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[var(--card-divider)] flex items-center justify-between bg-black/5 dark:bg-black/5">
+          <div className="flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+            <h2 className="text-base font-black text-[var(--card-text-main)] tracking-tight">
+              {mode === 'EXPENSE' && 'Record Spending'}
+              {mode === 'SPLIT' && 'Friend Split'}
+              {mode === 'LENDING' && 'Lend Money'}
+              {mode === 'NL' && 'Natural Language Entry'}
+            </h2>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 text-[var(--card-text-sub)] hover:text-[var(--card-text-main)] rounded-xl hover:bg-black/5 dark:hover:bg-black/5 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Mode Selector Tabs */}
+        <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setMode('EXPENSE')}
+            className={`flex-1 py-2 text-xs font-black rounded-t-xl transition-all ${
+              mode === 'EXPENSE'
+                ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-rose-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            Personal
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('SPLIT')}
+            className={`flex-1 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 transition-all ${
+              mode === 'SPLIT'
+                ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-indigo-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Friend Split</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('LENDING')}
+            className={`flex-1 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 transition-all ${
+              mode === 'LENDING'
+                ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-amber-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            <HandCoins className="w-3.5 h-3.5" />
+            <span>Lend</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('NL');
+              setTimeout(() => nlInputRef.current?.focus(), 50);
+            }}
+            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center space-x-1 transition-all ${
+              mode === 'NL'
+                ? 'bg-black/10 dark:bg-black/10 text-indigo-500 border-t-2 border-indigo-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+            title="Type naturally e.g. Spent 50 on food"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+          
+          {/* Natural Language Assist Bar */}
+          {mode === 'NL' && (
+            <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-2xl space-y-2">
+              <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Type naturally in plain English</span>
+              </label>
+              <div className="flex space-x-2">
+                <input
+                  ref={nlInputRef}
+                  type="text"
+                  value={nlText}
+                  onChange={e => setNlText(e.target.value)}
+                  placeholder="e.g. Spent 50 on food, or Paid 200 for food 100 was Karthick's"
+                  className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs text-[var(--card-text-main)] px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleParseNL}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1"
+                >
+                  <span>Parse</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+              {nlError && <p className="text-xs text-rose-500">{nlError}</p>}
+            </div>
+          )}
+
+          {/* Large Amount Input */}
+          <div className="text-center py-2">
+            <span className="text-xs font-bold text-[var(--card-text-sub)] uppercase tracking-wider block mb-1 font-mono">
+              {mode === 'EXPENSE' && 'Amount Spent'}
+              {mode === 'SPLIT' && 'Total Bill Paid'}
+              {mode === 'LENDING' && 'Amount Lent'}
+            </span>
+            <div className="inline-flex items-center justify-center bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl px-4 py-2 focus-within:border-rose-500 transition-colors w-full">
+              <span className="text-2xl font-bold text-[var(--card-text-sub)] mr-1.5 font-mono">₹</span>
+              <input
+                ref={amountInputRef}
+                type="number"
+                step="any"
+                inputMode="decimal"
+                value={amountStr}
+                onChange={e => setAmountStr(e.target.value)}
+                placeholder="0"
+                className="w-full text-3xl font-black text-[var(--card-text-main)] bg-transparent focus:outline-none font-mono-num tracking-tight"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Smart Category Suggestion Badge */}
+          {suggestedCat && suggestedCat !== selectedCategory && mode === 'EXPENSE' && (
+            <button
+              type="button"
+              onClick={() => setSelectedCategory(suggestedCat)}
+              className="w-full flex items-center justify-between px-3.5 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-500 transition-colors"
+            >
+              <div className="flex items-center space-x-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                <span>You often spend ₹{amountStr} on <strong>{suggestedCat}</strong></span>
+              </div>
+              <span className="font-bold underline">Select</span>
+            </button>
+          )}
+
+          {/* Mode-Specific Controls */}
+          {mode === 'EXPENSE' && (
+            <div>
+              <label className="text-xs font-bold text-[var(--card-text-sub)] block mb-2 font-mono">
+                WHAT WAS IT FOR?
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {STANDARD_CATEGORIES.map(cat => {
+                  const isSelected = selectedCategory === cat.name;
+                  return (
+                    <button
+                      key={cat.name}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat.name)}
+                      className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-xs font-bold transition-all ${
+                        isSelected
+                          ? 'bg-rose-500/20 border-rose-500 text-[var(--card-text-main)] shadow-sm'
+                          : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)] hover:border-black/20'
+                      }`}
+                    >
+                      <span className="text-lg mb-1">{cat.emoji}</span>
+                      <span>{cat.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {mode === 'SPLIT' && (
+            <div className="space-y-3 bg-black/5 dark:bg-black/5 p-3.5 rounded-2xl border border-[var(--card-divider)]">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[var(--card-text-main)]">Split Breakdown</label>
+                <span className="text-[11px] text-[var(--card-text-sub)] font-mono">Total: ₹{numericAmount || 0}</span>
+              </div>
+
+              {/* User share */}
+              <div className="flex items-center justify-between bg-black/10 dark:bg-black/10 p-2.5 rounded-xl border border-[var(--card-divider)] shadow-sm">
+                <span className="text-xs font-bold text-[var(--card-text-main)]">Your Share (Personal)</span>
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-[var(--card-text-sub)] font-mono">₹</span>
+                  <input
+                    type="number"
+                    value={userShareStr}
+                    onChange={e => setUserShareStr(e.target.value)}
+                    className="w-20 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-right px-2 py-1 text-sm font-bold rounded-lg text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 font-mono-num"
+                  />
+                </div>
+              </div>
+
+              {/* Friends list in split */}
+              {splitFriends.map((friend, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-black/10 dark:bg-black/10 p-2.5 rounded-xl border border-[var(--card-divider)] shadow-sm">
+                  <span className="text-xs font-bold text-indigo-500">{friend.personName}</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-[var(--card-text-sub)] font-mono">₹</span>
+                    <input
+                      type="number"
+                      value={friend.amountStr}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setSplitFriends(prev =>
+                          prev.map((f, i) => (i === idx ? { ...f, amountStr: val } : f))
+                        );
+                      }}
+                      className="w-20 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-right px-2 py-1 text-sm font-bold rounded-lg text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 font-mono-num"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSplitFriends(prev => prev.filter((_, i) => i !== idx))}
+                      className="text-[var(--card-text-sub)] hover:text-rose-500 p-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Quick Add Friend Chips */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] text-[var(--card-text-sub)] block font-mono">WHO SHARED THIS?</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {frequentPeople.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleAddSplitFriend(p.id, p.name)}
+                      className="px-3 py-1 bg-black/5 dark:bg-black/5 hover:bg-black/10 border border-[var(--card-divider)] rounded-xl text-xs font-semibold text-[var(--card-text-main)] transition-colors flex items-center space-x-1 shadow-sm"
+                    >
+                      <Plus className="w-3 h-3 text-indigo-500" />
+                      <span>{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex space-x-2 pt-1.5">
+                  <input
+                    type="text"
+                    value={newFriendName}
+                    onChange={e => setNewFriendName(e.target.value)}
+                    placeholder="Add friend name..."
+                    className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newFriendName.trim()) {
+                        handleAddSplitFriend('', newFriendName.trim());
+                        setNewFriendName('');
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Category for split */}
+              <div className="pt-2 border-t border-[var(--card-divider)]">
+                <label className="text-[11px] text-[var(--card-text-sub)] block mb-1 font-mono">EXPENSE CATEGORY</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['Food', 'Transport', 'Entertainment', 'Groceries', 'Other'].map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold border transition-colors shadow-sm ${
+                        selectedCategory === cat
+                          ? 'bg-indigo-600 border-indigo-400 text-white'
+                          : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {mode === 'LENDING' && (
+            <div className="space-y-3 bg-black/5 dark:bg-black/5 p-3.5 rounded-2xl border border-[var(--card-divider)]">
+              <div>
+                <label className="text-xs font-bold text-[var(--card-text-main)] block mb-1.5">Who did you lend to?</label>
+                
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {frequentPeople.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setLendingPersonId(p.id);
+                        setLendingPersonName(p.name);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center space-x-1 shadow-sm ${
+                        lendingPersonName === p.name
+                          ? 'bg-amber-600 text-white border-amber-400'
+                          : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
+                      }`}
+                    >
+                      <span>{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="text"
+                  value={lendingPersonName}
+                  onChange={e => {
+                    setLendingPersonName(e.target.value);
+                    setLendingPersonId('');
+                  }}
+                  placeholder="Or enter friend's name (e.g. Karthick)"
+                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-amber-500 shadow-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-[var(--card-text-sub)] block mb-1">Expected Repayment Date (Optional)</label>
+                <input
+                  type="date"
+                  value={expectedDate}
+                  onChange={e => setExpectedDate(e.target.value)}
+                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-amber-500 shadow-sm"
+                />
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-500 leading-relaxed">
+                💡 <strong>Important:</strong> Money lent is recorded as a receivable and deducted from cash, but does <strong>NOT</strong> count as personal spending.
+              </div>
+            </div>
+          )}
+
+          {/* Optional Note */}
+          <div>
+            <input
+              type="text"
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Optional note (e.g. Swiggy coupon applied)"
+              className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] placeholder:text-[var(--card-text-sub)] focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          {/* Error Message */}
+          {errorMsg && (
+            <div className="flex items-center space-x-1.5 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-500">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-sm shadow-md active:scale-[0.99] transition-all flex items-center justify-center space-x-1.5"
+            >
+              <Check className="w-4 h-4" />
+              <span>
+                {mode === 'EXPENSE' && 'Save Expense'}
+                {mode === 'SPLIT' && 'Save Friend Split'}
+                {mode === 'LENDING' && 'Record Loan'}
+                {mode === 'NL' && 'Save Transaction'}
+              </span>
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  );
+};
