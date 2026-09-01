@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Trash2,
   Edit2,
   Calendar,
   Clock,
-  CheckCircle2,
-  RotateCcw,
+  Check,
   Users,
   HandCoins,
-  Check,
+  ArrowRight,
+  RotateCcw,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { Transaction } from '../../types/finance';
@@ -24,38 +24,60 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   transaction,
   onClose,
 }) => {
-  const { deleteTransaction, updateTransaction } = useFinance();
+  const { deleteTransaction, updateTransaction, people } = useFinance();
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
   const [amountStr, setAmountStr] = useState<string>('');
+  const [userShareStr, setUserShareStr] = useState<string>('');
   const [category, setCategory] = useState<string>('');
   const [note, setNote] = useState<string>('');
+  const [date, setDate] = useState<string>('');
+
+  useEffect(() => {
+    if (transaction) {
+      setAmountStr(String(transaction.amount));
+      setUserShareStr(String(transaction.userShare || Math.round(transaction.amount / 2)));
+      setCategory(transaction.category);
+      setNote(transaction.note || '');
+      setDate(transaction.date);
+      setIsEditing(false);
+    }
+  }, [transaction]);
 
   if (!transaction) return null;
 
   const handleStartEdit = () => {
     setAmountStr(String(transaction.amount));
+    setUserShareStr(String(transaction.userShare || Math.round(transaction.amount / 2)));
     setCategory(transaction.category);
     setNote(transaction.note || '');
+    setDate(transaction.date);
     setIsEditing(true);
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
     const num = parseFloat(amountStr);
     if (!num || num <= 0) return;
 
+    let userShare = transaction.userShare;
+    if (transaction.type === 'SPLIT') {
+      userShare = parseFloat(userShareStr) || Math.round(num / 2);
+    }
+
     await updateTransaction(transaction.id, {
       amount: num,
+      userShare,
       category,
       note: note.trim() || undefined,
-      userShare: transaction.type === 'SPLIT' ? Math.round(num / 2) : undefined,
+      date: date || transaction.date,
     });
     setIsEditing(false);
     onClose();
   };
 
   const handleDelete = async () => {
-    if (window.confirm('Delete this transaction? All balances will automatically recalculate.')) {
+    if (window.confirm('Delete this transaction? All balances, loans, and receivables will automatically recalculate.')) {
       await deleteTransaction(transaction.id);
       onClose();
     }
@@ -118,9 +140,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </div>
 
               {/* Split Breakdown */}
-              {transaction.type === 'SPLIT' && transaction.splits && (
-                <div className="p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl space-y-1.5">
-                  <span className="text-[11px] font-bold text-indigo-500 uppercase flex items-center space-x-1 font-mono">
+              {transaction.type === 'SPLIT' && (
+                <div className="p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl space-y-1.5 font-mono">
+                  <span className="text-[11px] font-bold text-indigo-500 uppercase flex items-center space-x-1">
                     <Users className="w-3.5 h-3.5" />
                     <span>Split Breakdown</span>
                   </span>
@@ -128,7 +150,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     <span className="text-[var(--card-text-sub)]">Your Share:</span>
                     <span className="font-bold text-[var(--card-text-main)]">{formatINR(transaction.userShare || 0)}</span>
                   </div>
-                  {transaction.splits.map((s, idx) => (
+                  {transaction.splits?.map((s, idx) => (
                     <div key={idx} className="flex items-center justify-between text-xs font-mono-num text-indigo-500">
                       <span>{s.personName}:</span>
                       <span>{formatINR(s.amount)}</span>
@@ -139,7 +161,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
               {/* Lending Details */}
               {transaction.type === 'LENDING' && transaction.personName && (
-                <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs font-mono-num text-amber-500 flex items-center justify-between">
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs font-mono-num text-amber-500 flex items-center justify-between font-mono">
                   <span>Lent to {transaction.personName}</span>
                   <span className="font-bold">{formatINR(transaction.amount)}</span>
                 </div>
@@ -158,36 +180,64 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <button
                 onClick={handleDelete}
                 className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-500 rounded-xl text-xs font-bold flex items-center justify-center transition-colors"
-                title="Delete transaction"
+                title="Delete transaction and reverse all effects"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <form onSubmit={handleSaveEdit} className="space-y-3">
             <div>
-              <label className="text-xs text-[var(--card-text-sub)] block mb-1">Amount (₹)</label>
+              <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Amount (₹)</label>
               <input
                 type="number"
+                step="any"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
                 className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-sm font-bold px-3.5 py-2 rounded-xl text-[var(--card-text-main)] font-mono-num focus:outline-none focus:border-indigo-500"
+                required
               />
             </div>
 
+            {transaction.type === 'SPLIT' && (
+              <div>
+                <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Your Personal Share (₹)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={userShareStr}
+                  onChange={e => setUserShareStr(e.target.value)}
+                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs font-bold px-3.5 py-2 rounded-xl text-[var(--card-text-main)] font-mono-num focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+            )}
+
             <div>
-              <label className="text-xs text-[var(--card-text-sub)] block mb-1">Category</label>
+              <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Category</label>
               <input
                 type="text"
                 value={category}
                 onChange={e => setCategory(e.target.value)}
                 className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
+                required
               />
             </div>
 
             <div>
-              <label className="text-xs text-[var(--card-text-sub)] block mb-1">Note</label>
+              <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Date (YYYY-MM-DD)</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Note</label>
               <input
                 type="text"
                 value={note}
@@ -198,20 +248,21 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
             <div className="flex space-x-2 pt-2">
               <button
+                type="button"
                 onClick={() => setIsEditing(false)}
                 className="flex-1 py-2 bg-black/10 dark:bg-black/10 text-xs font-semibold text-[var(--card-text-main)] rounded-xl"
               >
                 Cancel
               </button>
               <button
-                onClick={handleSaveEdit}
-                className="flex-1 py-2 bg-indigo-600 text-xs font-bold text-white rounded-xl flex items-center justify-center space-x-1"
+                type="submit"
+                className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white rounded-xl flex items-center justify-center space-x-1"
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>Save Changes</span>
               </button>
             </div>
-          </div>
+          </form>
         )}
 
       </div>

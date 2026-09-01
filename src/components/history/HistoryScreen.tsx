@@ -6,12 +6,12 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   RotateCcw,
-  Tag,
   Clock,
-  Filter,
+  ArrowRightLeft,
+  Scale,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
-import { Transaction, TransactionType } from '../../types/finance';
+import { Transaction } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
 
 interface HistoryScreenProps {
@@ -32,6 +32,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       if (filterType === 'MONEY_IN' && !['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(tx.type)) {
         return false;
       }
+      if (filterType === 'TRANSFER' && tx.type !== 'TRANSFER' && tx.type !== 'ADJUSTMENT') return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -49,10 +50,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
   }, [transactions, filterType, searchQuery]);
 
   const groupedTransactions = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
     const groups: { [dateKey: string]: Transaction[] } = {};
 
@@ -61,8 +64,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       if (tx.date === todayStr) label = 'TODAY';
       else if (tx.date === yesterdayStr) label = 'YESTERDAY';
       else {
-        const d = new Date(tx.date);
-        label = d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+        const [y, m, d] = tx.date.split('-').map(Number);
+        const dateObj = new Date(y, (m || 1) - 1, d || 1);
+        label = dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
       }
 
       if (!groups[label]) groups[label] = [];
@@ -121,6 +125,20 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
             Refund
           </span>
         );
+      case 'TRANSFER':
+        return (
+          <span className="text-[11px] font-bold text-slate-400 bg-black/10 dark:bg-black/5 border border-[var(--card-divider)] px-2 py-0.5 rounded-md font-mono flex items-center space-x-1">
+            <ArrowRightLeft className="w-3 h-3" />
+            <span>Transfer</span>
+          </span>
+        );
+      case 'ADJUSTMENT':
+        return (
+          <span className="text-[11px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md font-mono flex items-center space-x-1">
+            <Scale className="w-3 h-3" />
+            <span>Reconciliation Adjustment</span>
+          </span>
+        );
       default:
         return null;
     }
@@ -153,6 +171,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
             { id: 'SPLIT', label: 'Friend Splits' },
             { id: 'LENDING', label: 'Lending' },
             { id: 'MONEY_IN', label: 'Money In' },
+            { id: 'TRANSFER', label: 'Transfers & Adjustments' },
           ].map(chip => (
             <button
               key={chip.id}
@@ -173,7 +192,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       {groupedTransactions.length === 0 ? (
         <div className="text-center py-16 px-4 theme-card rounded-3xl shadow-sm">
           <p className="text-sm font-black text-[var(--card-text-main)]">Nothing spent yet.</p>
-          <p className="text-xs text-[var(--card-text-sub)] mt-1">Add your first expense or money received to start tracking.</p>
+          <p className="text-xs text-[var(--card-text-sub)] mt-1">Record your first transaction and FinanceOS will start tracking where your money goes.</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -185,7 +204,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
 
               <div className="theme-card rounded-3xl divide-y divide-[var(--card-divider)] overflow-hidden shadow-sm">
                 {items.map(tx => {
-                  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(tx.type);
+                  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(tx.type) || (tx.type === 'ADJUSTMENT' && tx.amount > 0);
                   const isLending = tx.type === 'LENDING';
                   
                   return (
@@ -196,25 +215,19 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
                     >
                       <div className="flex items-center space-x-3.5 min-w-0">
                         <div
-                          className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 font-bold text-xs ${
                             isPositive
                               ? 'bg-emerald-500/10 text-emerald-500'
                               : isLending
                               ? 'bg-amber-500/10 text-amber-500'
                               : tx.type === 'SPLIT'
                               ? 'bg-indigo-500/10 text-indigo-500'
+                              : tx.type === 'TRANSFER' || tx.type === 'ADJUSTMENT'
+                              ? 'bg-blue-500/10 text-blue-500'
                               : 'bg-rose-500/10 text-rose-500'
                           }`}
                         >
-                          {isPositive ? (
-                            <ArrowDownLeft className="w-4 h-4" />
-                          ) : isLending ? (
-                            <HandCoins className="w-4 h-4" />
-                          ) : tx.type === 'SPLIT' ? (
-                            <Users className="w-4 h-4" />
-                          ) : (
-                            <ArrowUpRight className="w-4 h-4" />
-                          )}
+                          {isPositive ? '+' : isLending ? '↗' : tx.type === 'SPLIT' ? '👥' : tx.type === 'TRANSFER' ? '↔' : tx.type === 'ADJUSTMENT' ? '⚖️' : '−'}
                         </div>
 
                         <div className="min-w-0">
@@ -244,10 +257,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
                               ? 'text-emerald-500'
                               : isLending
                               ? 'text-amber-500'
+                              : tx.type === 'TRANSFER'
+                              ? 'text-[var(--card-text-main)]'
                               : 'text-rose-500'
                           }`}
                         >
-                          {isPositive ? '+' : '−'} {formatINR(tx.amount)}
+                          {isPositive ? '+' : tx.type === 'TRANSFER' ? '' : '−'} {formatINR(Math.abs(tx.amount))}
                         </span>
                         
                         {tx.type === 'SPLIT' && (

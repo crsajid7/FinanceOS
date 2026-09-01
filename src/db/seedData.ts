@@ -4,6 +4,7 @@ import {
   MonthlyBudget,
   Account,
   Transaction,
+  ReservedMoney,
 } from '../types/finance';
 
 export const DEMO_USER: UserProfile = {
@@ -12,6 +13,7 @@ export const DEMO_USER: UserProfile = {
   email: 'student@financeos.app',
   currency: '₹',
   defaultMonthlyBudget: 0,
+  budgetCycleStartDay: 5, // Starts 5th of every month (e.g. Sep 5 → Oct 4)
   theme: 'light',
   customCategories: ['Food', 'Groceries', 'Transport', 'College', 'Entertainment', 'Personal', 'Rent', 'Other'],
 };
@@ -60,6 +62,8 @@ export const DEMO_ACCOUNTS: Account[] = [
     balance: 0,
   },
 ];
+
+export const DEMO_RESERVED_MONEY: ReservedMoney[] = [];
 
 export function getDemoBudgets(currentYearMonth: string): MonthlyBudget[] {
   return [

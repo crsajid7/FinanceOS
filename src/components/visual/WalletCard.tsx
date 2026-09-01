@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CreditCard, Wallet, Landmark, ArrowUpRight, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { Wallet, Eye, EyeOff, Landmark, Banknote } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatINR } from '../../services/accountingEngine';
 
@@ -16,73 +16,60 @@ export const WalletCard: React.FC = () => {
   };
 
   return (
-    <div className="space-y-3">
-      {/* Wallet Card Container */}
-      <div className="relative overflow-hidden rounded-3xl theme-card p-6 shadow-xl transition-all duration-300">
-        
-        {/* Glow Effects */}
-        <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-        {/* Card Header */}
-        <div className="relative z-10 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-black uppercase tracking-widest font-mono text-[var(--card-text-main)]">
-              FINANCEOS WALLET
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+    <div className="relative overflow-hidden rounded-3xl theme-card p-5 sm:p-6 shadow-md transition-all duration-300">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 rounded-xl bg-black/10 dark:bg-black/5 flex items-center justify-center text-[var(--card-text-main)]">
+            {activeAccount.type === 'CASH' ? <Banknote className="w-4 h-4" /> : <Wallet className="w-4 h-4" />}
           </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setHideBalance(!hideBalance)}
-              className="text-[var(--card-text-sub)] hover:text-[var(--card-text-main)] p-1 transition-colors"
-              title="Toggle balance visibility"
-            >
-              {hideBalance ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            </button>
-            <span className="text-xs font-extrabold tracking-widest font-mono text-[var(--card-text-sub)]">
-              STUDENT
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-widest font-mono text-[var(--card-text-sub)] block">
+              TOTAL PHYSICAL CASH
+            </span>
+            <span className="text-xs font-bold text-[var(--card-text-main)] block">
+              {activeAccount.name}
             </span>
           </div>
         </div>
 
-        {/* Balance Section */}
-        <div className="relative z-10 py-5">
-          <span className="text-[11px] font-bold uppercase tracking-wider block text-[var(--card-text-sub)] font-mono">
-            {activeAccount.name.toUpperCase()} · PHYSICAL CASH BALANCE
-          </span>
-          <div className="flex items-baseline space-x-2 mt-1">
-            <span className="text-3xl sm:text-4xl font-black font-mono-num tracking-tight text-[var(--card-text-main)]">
-              {hideBalance ? '₹ ••••••' : formatINR(activeAccount.balance)}
-            </span>
-          </div>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setHideBalance(!hideBalance)}
+            className="p-1.5 rounded-lg bg-black/5 dark:bg-black/5 text-[var(--card-text-sub)] hover:text-[var(--card-text-main)] transition-colors"
+            title="Toggle balance visibility"
+          >
+            {hideBalance ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
         </div>
+      </div>
 
-        {/* Card Footer: Masked number & account switch chips */}
-        <div className="relative z-10 flex items-center justify-between pt-3 border-t border-[var(--card-divider)]">
-          <div className="flex items-center space-x-1.5 font-mono text-[11px] text-[var(--card-text-sub)]">
-            <span>••••</span>
-            <span>••••</span>
-            <span>6925</span>
-          </div>
+      {/* Balance */}
+      <div className="py-4">
+        <span className="text-3xl sm:text-4xl font-black font-mono-num tracking-tight text-[var(--card-text-main)]">
+          {hideBalance ? '₹ ••••••' : formatINR(activeAccount.balance)}
+        </span>
+        <span className="text-[10px] text-[var(--card-text-dim)] block mt-0.5 font-mono">
+          Total in all accounts: {formatINR(summary.totalPhysicalCashBalance)}
+        </span>
+      </div>
 
-          {/* Account Tabs */}
-          <div className="flex space-x-1 bg-black/10 dark:bg-black/5 p-1 rounded-xl border border-black/5 dark:border-black/5">
-            {accounts.map((acc, idx) => (
-              <button
-                key={acc.id}
-                onClick={() => setSelectedAccIndex(idx)}
-                className={`px-2.5 py-0.5 text-[10px] font-bold rounded-lg transition-all ${
-                  selectedAccIndex === idx
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
-                }`}
-              >
-                {acc.name.split(' ')[0]}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Account Tabs */}
+      <div className="flex space-x-1.5 pt-3 border-t border-[var(--card-divider)] overflow-x-auto no-scrollbar">
+        {accounts.map((acc, idx) => (
+          <button
+            key={acc.id}
+            onClick={() => setSelectedAccIndex(idx)}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
+              selectedAccIndex === idx
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-black/5 dark:bg-black/5 text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            {acc.name}
+          </button>
+        ))}
       </div>
     </div>
   );

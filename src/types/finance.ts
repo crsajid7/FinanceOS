@@ -6,7 +6,8 @@ export type TransactionType =
   | 'REIMBURSEMENT'
   | 'LOAN_REPAYMENT'
   | 'REFUND'
-  | 'TRANSFER';
+  | 'TRANSFER'
+  | 'ADJUSTMENT';
 
 export type TransactionStatus = 'ACTIVE' | 'SETTLED' | 'PARTIALLY_SETTLED' | 'CANCELLED';
 
@@ -45,7 +46,7 @@ export interface Transaction {
   amount: number; // Total transaction amount
   userShare?: number; // In SPLIT, the user's actual personal portion
   category: string; // StandardCategory or custom category
-  date: string; // ISO string YYYY-MM-DD
+  date: string; // YYYY-MM-DD in local time
   time: string; // HH:mm (24h)
   note?: string;
   
@@ -60,14 +61,15 @@ export interface Transaction {
   loanDetails?: LoanDetails;
   
   // Account/wallet reference
-  accountId: string; // 'bank' | 'cash' | 'upi'
+  accountId: string; // 'acc_bank' | 'acc_cash' | 'acc_upi'
   toAccountId?: string; // For TRANSFER
   
   // Metadata & Links
   status: TransactionStatus;
   linkedTransactionId?: string; // Links repayment/reimbursement back to original loan/split
-  isMonthlyBudget?: boolean; // When MONEY_RECEIVED is designated as the monthly budget
-  monthlyBudgetId?: string; // "YYYY-MM"
+  isMonthlyBudget?: boolean; // When MONEY_RECEIVED is designated as budget for the cycle
+  budgetCycleKey?: string; // e.g. "2026-09-05_2026-10-04"
+  monthlyBudgetId?: string; // Legacy fallback
   
   createdAt: number;
   updatedAt: number;
@@ -89,12 +91,24 @@ export interface CategoryAllocation {
 }
 
 export interface MonthlyBudget {
-  id: string; // e.g. "2026-09"
+  id: string; // e.g. "2026-09" or cycle key
   userId: string;
-  yearMonth: string; // "2026-09"
+  yearMonth: string; // e.g. "2026-09"
   totalBudget: number;
   allocations: Record<string, number>; // category -> budget amount
   notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ReservedMoney {
+  id: string;
+  userId: string;
+  amount: number;
+  purpose: string; // e.g. "PG Rent", "Bus Pass", "College Fee"
+  dueDate?: string; // YYYY-MM-DD
+  isFulfilled: boolean;
+  fulfilledDate?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -113,6 +127,7 @@ export interface UserProfile {
   email: string;
   currency: string;
   defaultMonthlyBudget: number;
+  budgetCycleStartDay: number; // 1 to 28, default 5 (i.e. 5th of every month)
   theme: 'dark' | 'light';
   customCategories: string[];
 }
@@ -127,13 +142,36 @@ export interface PersonBalanceSummary {
   lastInteractionDate?: string;
 }
 
+export interface BudgetCycleRange {
+  cycleKey: string; // e.g. "2026-09-05_2026-10-04"
+  label: string;    // e.g. "Sep 5 → Oct 4"
+  shortLabel: string; // e.g. "Sep 5 – Oct 4, 2026"
+  startDate: string; // "2026-09-05"
+  endDate: string;   // "2026-10-04"
+  startDay: number;
+  year: number;
+  month: number;
+  isCurrent: boolean;
+  totalDays: number;
+  currentDayIndex: number;
+  daysRemaining: number;
+}
+
 export interface MonthlyFinancialSummary {
   yearMonth: string; // "YYYY-MM"
   monthName: string;
+  cycle: BudgetCycleRange;
+  
   totalBudget: number;
   totalReceived: number;
   actualPersonalSpent: number;
-  leftToSpend: number;
+  
+  // Reserved & Spendable
+  totalReserved: number;
+  spendableMoney: number; // totalBudget - totalReserved - actualPersonalSpent (can be negative if over budget)
+  leftToSpend: number;    // Spendable money
+  isOverBudget: boolean;
+  overBudgetAmount: number;
   
   // Friends breakdown
   totalPaidForOthers: number;
@@ -148,7 +186,7 @@ export interface MonthlyFinancialSummary {
   // Overall Receivables
   totalMoneyOwedToYou: number;
   
-  // Cash vs Budget separation
+  // Physical Cash
   totalPhysicalCashBalance: number;
   
   // Pace & Forecasting
@@ -156,7 +194,7 @@ export interface MonthlyFinancialSummary {
   currentDay: number;
   daysRemaining: number;
   dailySpendingPace: number; // ₹/day so far
-  recommendedDailyPace: number; // ₹/day remaining to stay within budget
+  recommendedDailyPace: number; // ₹/day remaining
   paceStatus: 'ON_TRACK' | 'SLIGHTLY_FAST' | 'OVERSPENDING' | 'AHEAD_OF_BUDGET';
   paceMessage: string;
   estimatedRemainingAtCurrentPace: number;
@@ -169,14 +207,15 @@ export interface MonthlyFinancialSummary {
     allocatedBudget?: number;
   }[];
   
-  // Today and This Week
+  // Today and Rolling 7 Days
   todaySpent: number;
-  thisWeekSpent: number;
+  thisWeekSpent: number; // Rolling last 7 days
 }
 
 export interface WhereDidMyMoneyGoReport {
   yearMonth: string;
   monthName: string;
+  cycleLabel: string;
   totalReceived: number;
   actualPersonalSpending: number;
   topCategories: { category: string; amount: number; percentage: number }[];
@@ -186,6 +225,21 @@ export interface WhereDidMyMoneyGoReport {
   moneyLent: number;
   repaidLoans: number;
   stillOutstandingLoans: number;
+  totalReserved: number;
+  spendableMoney: number;
   remainingBudget: number;
+  isOverBudget: boolean;
+  overBudgetAmount: number;
   summaryParagraph: string;
+}
+
+export interface ExportDataPayload {
+  version: number;
+  exportedAt: string;
+  user: UserProfile;
+  accounts: Account[];
+  transactions: Transaction[];
+  people: Person[];
+  budgets: MonthlyBudget[];
+  reservedMoney: ReservedMoney[];
 }

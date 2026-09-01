@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Sparkles,
-  TrendingDown,
   Users,
   Calendar,
   AlertTriangle,
@@ -11,15 +10,16 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   HandCoins,
-  CreditCard,
   Plus,
-  Clock,
+  Scale,
+  Bookmark,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatINR } from '../../services/accountingEngine';
 import { WalletCard } from '../visual/WalletCard';
-import { TickLineGauge } from '../visual/TickLineGauge';
+import { ReconciliationModal } from './ReconciliationModal';
+import { ReservedMoneyModal } from './ReservedMoneyModal';
 
 interface HomeScreenProps {
   onOpenSpent: () => void;
@@ -36,64 +36,94 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigateToPeople,
   onNavigateToHistory,
 }) => {
-  const { summary, transactions } = useFinance();
+  const { summary, transactions, selectedCycle } = useFinance();
   const { currentUser } = useAuth();
+
+  const [showReconciliation, setShowReconciliation] = useState<boolean>(false);
+  const [showReservedModal, setShowReservedModal] = useState<boolean>(false);
 
   const recentTransactions = transactions.slice(0, 4);
 
   return (
-    <div className="space-y-6 pb-28 max-w-2xl mx-auto">
+    <div className="space-y-5 pb-28 max-w-2xl mx-auto">
       
-      {/* Top Header: Greeting & Profile */}
+      {/* 1. Header: Greeting & Active Budget Cycle */}
       <div className="flex items-center justify-between pt-1">
         <div>
           <span className="text-[11px] font-bold text-[var(--page-subtitle)] uppercase tracking-wider block font-mono">
-            FINANCEOS DIARY
+            FINANCEOS
           </span>
           <h1 className="text-xl font-black tracking-tight text-[var(--page-title)]">
             {currentUser.name}
           </h1>
         </div>
+
+        <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full theme-card text-xs font-mono font-bold">
+          <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="text-[var(--card-text-main)]">{selectedCycle.label}</span>
+          <span className="text-[var(--card-text-sub)]">· {selectedCycle.daysRemaining}d left</span>
+        </div>
       </div>
 
-      {/* 1. Wallet Card */}
-      <WalletCard />
-
-      {/* 2. "AVAILABLE BUDGET" Card with Barcode Gauge */}
-      <div className="relative overflow-hidden theme-card rounded-3xl p-6 shadow-xl space-y-4">
+      {/* 2. Primary Spendable Money Hero Card */}
+      <div className={`rounded-3xl p-6 shadow-md space-y-4 ${
+        summary.isOverBudget
+          ? 'bg-rose-950/20 border-2 border-rose-500/50 text-rose-500'
+          : 'theme-card'
+      }`}>
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--card-text-sub)] font-mono">
-            AVAILABLE {summary.monthName.toUpperCase()} BUDGET
+            {summary.isOverBudget ? 'OVER-BUDGET ALERT' : 'SPENDABLE MONEY / LEFT TO SPEND'}
           </span>
-          <div className="flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-black/10 dark:bg-black/5 text-[10px] font-mono font-bold text-[var(--card-text-main)]">
-            <Calendar className="w-3 h-3 text-[var(--card-text-sub)]" />
-            <span>{summary.daysRemaining} days left</span>
-          </div>
+          <span className="text-xs font-mono font-bold text-[var(--card-text-sub)]">
+            ≈ {formatINR(summary.recommendedDailyPace)}/day target
+          </span>
         </div>
 
-        {/* Hero Number */}
+        {/* Large Main Number */}
         <div className="py-1">
-          <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono-num block text-[var(--card-text-main)]">
-            {formatINR(summary.leftToSpend)}
-          </span>
-          <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] mt-1 block">
-            Left to spend of {formatINR(summary.totalBudget)}
-          </span>
+          {summary.isOverBudget ? (
+            <div>
+              <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono-num block text-rose-500">
+                {formatINR(summary.overBudgetAmount)} OVER
+              </span>
+              <span className="text-xs font-bold uppercase tracking-wider text-rose-400 mt-1 block">
+                ₹0 left to spend · Exceeded {formatINR(summary.totalBudget)} cycle budget
+              </span>
+            </div>
+          ) : (
+            <div>
+              <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono-num block text-[var(--card-text-main)]">
+                {formatINR(summary.spendableMoney)}
+              </span>
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] mt-1 block font-mono">
+                Left to spend of {formatINR(summary.totalBudget)} total money
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Barcode Tick Line Gauge */}
-        <div className="pt-2 border-t border-[var(--card-divider)]">
-          <TickLineGauge
-            label="SPENDING BUDGET GAUGE"
-            amount={summary.leftToSpend}
-            maxAmount={summary.totalBudget}
-            highlightColor="#6366f1"
-            unitLabel="LEFT"
-          />
+        {/* Breakdown Row */}
+        <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[var(--card-divider)] text-center text-xs">
+          <div className="bg-black/5 dark:bg-black/5 p-2 rounded-xl border border-[var(--card-divider)]">
+            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">TOTAL IN</span>
+            <span className="font-bold text-[var(--card-text-main)] font-mono-num">{formatINR(summary.totalBudget)}</span>
+          </div>
+          <div className="bg-black/5 dark:bg-black/5 p-2 rounded-xl border border-[var(--card-divider)]">
+            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">RESERVED</span>
+            <span className="font-bold text-amber-500 font-mono-num">{formatINR(summary.totalReserved)}</span>
+          </div>
+          <div className="bg-black/5 dark:bg-black/5 p-2 rounded-xl border border-[var(--card-divider)]">
+            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">SPENT</span>
+            <span className="font-bold text-rose-500 font-mono-num">{formatINR(summary.actualPersonalSpent)}</span>
+          </div>
         </div>
       </div>
 
-      {/* 3. Quick Action Pill Buttons */}
+      {/* 3. Physical Cash Wallet Card */}
+      <WalletCard />
+
+      {/* 4. Quick Action Buttons */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <button
           onClick={onOpenSpent}
@@ -116,131 +146,93 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </button>
 
         <button
-          onClick={onNavigateToPeople}
+          onClick={() => setShowReservedModal(true)}
           className="p-3.5 theme-card rounded-2xl flex flex-col items-center justify-center space-y-1.5 transition-all shadow-sm group active:scale-95"
         >
           <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-500 flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm">
-            <Users className="w-4 h-4" />
+            <Bookmark className="w-4 h-4" />
           </div>
-          <span className="text-xs font-black text-[var(--card-text-main)] tracking-wide font-mono">FRIENDS</span>
+          <span className="text-xs font-black text-[var(--card-text-main)] tracking-wide font-mono">RESERVE</span>
         </button>
 
         <button
-          onClick={onOpenWhereDidMoneyGo}
+          onClick={() => setShowReconciliation(true)}
           className="p-3.5 theme-card rounded-2xl flex flex-col items-center justify-center space-y-1.5 transition-all shadow-sm group active:scale-95"
         >
           <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-500 flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm">
-            <Sparkles className="w-4 h-4" />
+            <Scale className="w-4 h-4" />
           </div>
-          <span className="text-xs font-black text-[var(--card-text-main)] tracking-wide font-mono">INSIGHTS</span>
+          <span className="text-xs font-black text-[var(--card-text-main)] tracking-wide font-mono">RECONCILE</span>
         </button>
       </div>
 
-      {/* 4. Quick Stats: Today & This Week */}
+      {/* 5. Personal Spending & Money Owed Grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="theme-card rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--card-text-sub)] font-mono">
+            PERSONAL SPENDING
+          </span>
+          <div className="mt-2">
+            <span className="text-2xl font-black text-[var(--card-text-main)] font-mono-num block">
+              {formatINR(summary.actualPersonalSpent)}
+            </span>
+            <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
+              In {selectedCycle.label}
+            </span>
+          </div>
+        </div>
+
+        <div
+          onClick={onNavigateToPeople}
+          className="theme-card rounded-2xl p-4 flex flex-col justify-between shadow-sm cursor-pointer hover:border-amber-500/40 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--card-text-sub)] font-mono">
+              OWED TO YOU
+            </span>
+            <ArrowRight className="w-3.5 h-3.5 text-amber-500" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl font-black text-amber-500 font-mono-num block">
+              {formatINR(summary.totalMoneyOwedToYou)}
+            </span>
+            <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
+              Splits & loans
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Today & Last 7 Days */}
       <div className="grid grid-cols-2 gap-3">
         <div className="theme-card rounded-2xl p-4 flex flex-col justify-between shadow-sm">
           <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--card-text-sub)] font-mono">
             TODAY'S SPEND
           </span>
-          <div className="mt-2">
-            <span className="text-2xl font-black text-[var(--card-text-main)] font-mono-num block">
-              {formatINR(summary.todaySpent)}
-            </span>
-            <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
-              {summary.todaySpent === 0 ? 'No spend recorded' : 'Personal spending'}
-            </span>
-          </div>
+          <span className="text-xl font-black text-[var(--card-text-main)] font-mono-num mt-1 block">
+            {formatINR(summary.todaySpent)}
+          </span>
         </div>
 
         <div className="theme-card rounded-2xl p-4 flex flex-col justify-between shadow-sm">
           <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--card-text-sub)] font-mono">
-            THIS WEEK
+            LAST 7 DAYS
           </span>
-          <div className="mt-2">
-            <span className="text-2xl font-black text-[var(--card-text-main)] font-mono-num block">
-              {formatINR(summary.thisWeekSpent)}
-            </span>
-            <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
-              Last 7 days total
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Money Owed to You Card */}
-      <div
-        onClick={onNavigateToPeople}
-        className="cursor-pointer rounded-3xl p-5 theme-card transition-all duration-200 shadow-md active:scale-[0.99]"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-black tracking-widest block font-mono text-[var(--card-text-sub)]">
-                MONEY OWED TO YOU
-              </span>
-              <span className="text-2xl font-black font-mono-num block text-amber-500">
-                {formatINR(summary.totalMoneyOwedToYou)}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2 text-xs">
-            <div className="text-right hidden sm:block text-[11px] font-mono text-[var(--card-text-sub)]">
-              <span>Splits: {formatINR(summary.pendingSplitReceivables)}</span>
-              <span className="block">Loans: {formatINR(summary.pendingLoanReceivables)}</span>
-            </div>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-black/10 dark:bg-black/5 text-[var(--card-text-main)]">
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 6. Spending Pace Section */}
-      <div className="theme-card rounded-3xl p-5 space-y-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Zap className="w-4 h-4 text-indigo-500" />
-            <span className="text-xs uppercase font-bold tracking-wider text-[var(--card-text-main)] font-mono">
-              SPENDING PACE
-            </span>
-          </div>
-          <span className="text-xs font-mono-num font-bold text-[var(--card-text-main)]">
-            {formatINR(summary.dailySpendingPace)} / day
+          <span className="text-xl font-black text-[var(--card-text-main)] font-mono-num mt-1 block">
+            {formatINR(summary.thisWeekSpent)}
           </span>
         </div>
-
-        <div className="p-3.5 bg-black/5 dark:bg-black/5 rounded-2xl flex items-start space-x-2.5 text-xs leading-relaxed border border-black/5 dark:border-black/5">
-          <div className="mt-0.5">
-            {summary.paceStatus === 'OVERSPENDING' ? (
-              <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-            ) : summary.paceStatus === 'SLIGHTLY_FAST' ? (
-              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            ) : (
-              <ShieldCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-            )}
-          </div>
-          <div>
-            <p className="font-semibold text-[var(--card-text-main)]">{summary.paceMessage}</p>
-            <p className="text-[11px] text-[var(--card-text-sub)] mt-1 font-mono-num">
-              Target pace: <strong>{formatINR(summary.recommendedDailyPace)}/day</strong> for the next {summary.daysRemaining} days.
-            </p>
-          </div>
-        </div>
       </div>
 
-      {/* 7. Recent Transactions */}
-      <div className="space-y-3">
+      {/* 7. Recent Transactions Feed */}
+      <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-bold uppercase tracking-wider text-[var(--page-subtitle)] font-mono">
             RECENT TRANSACTIONS
           </span>
           <button
             onClick={onNavigateToHistory}
-            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline transition-colors"
+            className="text-xs font-bold text-indigo-500 hover:underline transition-colors"
           >
             View All
           </button>
@@ -263,9 +255,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   onClick={onNavigateToHistory}
                   className="p-4 hover:bg-black/5 dark:hover:bg-black/5 cursor-pointer transition-colors flex items-center justify-between"
                 >
-                  <div className="flex items-center space-x-3.5">
+                  <div className="flex items-center space-x-3.5 min-w-0">
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-xs ${
                         isPositive
                           ? 'bg-emerald-500/10 text-emerald-500'
                           : isLending
@@ -275,30 +267,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           : 'bg-rose-500/10 text-rose-500'
                       }`}
                     >
-                      {isPositive ? (
-                        <ArrowDownLeft className="w-4 h-4" />
-                      ) : isLending ? (
-                        <HandCoins className="w-4 h-4" />
-                      ) : tx.type === 'SPLIT' ? (
-                        <Users className="w-4 h-4" />
-                      ) : (
-                        <ArrowUpRight className="w-4 h-4" />
-                      )}
+                      {isPositive ? '+' : isLending ? '↗' : tx.type === 'SPLIT' ? '👥' : '−'}
                     </div>
 
-                    <div>
-                      <span className="text-xs font-bold text-[var(--card-text-main)] block">
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-[var(--card-text-main)] truncate block">
                         {tx.note || tx.category}
                       </span>
-                      <span className="text-[10px] text-[var(--card-text-sub)] mt-0.5 block font-mono">
+                      <span className="text-[10px] text-[var(--card-text-sub)] mt-0.5 block font-mono truncate">
                         {tx.category} · {tx.date}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right flex-shrink-0 ml-2">
                     <span
-                      className={`text-sm font-bold font-mono-num ${
+                      className={`text-sm font-black font-mono-num ${
                         isPositive
                           ? 'text-emerald-500'
                           : isLending
@@ -310,7 +294,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </span>
                     {tx.type === 'SPLIT' && (
                       <span className="text-[9px] text-[var(--card-text-dim)] block font-mono-num">
-                        Your: {formatINR(tx.userShare || 0)}
+                        Your share: {formatINR(tx.userShare || 0)}
                       </span>
                     )}
                   </div>
@@ -320,6 +304,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modals */}
+      <ReconciliationModal
+        isOpen={showReconciliation}
+        onClose={() => setShowReconciliation(false)}
+      />
+      <ReservedMoneyModal
+        isOpen={showReservedModal}
+        onClose={() => setShowReservedModal(false)}
+      />
 
     </div>
   );

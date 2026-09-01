@@ -9,7 +9,7 @@ interface AuthContextType {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   switchUser: (userId: string) => Promise<void>;
-  createCustomProfile: (name: string, monthlyBudget: number) => Promise<UserProfile>;
+  createCustomProfile: (name: string, monthlyBudget: number, budgetCycleStartDay?: number) => Promise<UserProfile>;
   resetToDemo: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   allUsers: UserProfile[];
@@ -19,13 +19,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
-    const savedTheme = (localStorage.getItem('paisa_theme') as 'light' | 'dark') || 'light';
+    const savedTheme = (localStorage.getItem('financeos_theme') as 'light' | 'dark') || 'light';
     return { ...DEMO_USER, theme: savedTheme };
   });
   const [allUsers, setAllUsers] = useState<UserProfile[]>([DEMO_USER]);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('paisa_theme') as 'light' | 'dark') || 'light';
+    return (localStorage.getItem('financeos_theme') as 'light' | 'dark') || 'light';
   });
 
   // Apply theme to html root
@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('paisa_theme', theme);
+    localStorage.setItem('financeos_theme', theme);
   }, [theme]);
 
   // Initialize users from DB
@@ -49,9 +49,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAllUsers([DEMO_USER]);
           setCurrentUser(DEMO_USER);
         } else {
-          setAllUsers(usersInDb);
-          const savedUserId = localStorage.getItem('paisa_active_user_id');
-          const matched = usersInDb.find(u => u.id === savedUserId) || usersInDb[0];
+          // Safe migration for budgetCycleStartDay
+          const migratedUsers = usersInDb.map(u => ({
+            ...u,
+            budgetCycleStartDay: u.budgetCycleStartDay || 5,
+          }));
+          setAllUsers(migratedUsers);
+          const savedUserId = localStorage.getItem('financeos_active_user_id');
+          const matched = migratedUsers.find(u => u.id === savedUserId) || migratedUsers[0];
           setCurrentUser(matched);
           setIsDemoMode(matched.id === DEMO_USER.id);
         }
@@ -71,17 +76,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (target) {
       setCurrentUser(target);
       setIsDemoMode(target.id === DEMO_USER.id);
-      localStorage.setItem('paisa_active_user_id', target.id);
+      localStorage.setItem('financeos_active_user_id', target.id);
     }
   };
 
-  const createCustomProfile = async (name: string, monthlyBudget: number): Promise<UserProfile> => {
+  const createCustomProfile = async (name: string, monthlyBudget: number, budgetCycleStartDay: number = 5): Promise<UserProfile> => {
     const newUser: UserProfile = {
       id: `user_${Date.now()}`,
       name,
-      email: `${name.toLowerCase().replace(/\s+/g, '')}@local.app`,
+      email: `${name.toLowerCase().replace(/\s+/g, '')}@financeos.app`,
       currency: '₹',
-      defaultMonthlyBudget: monthlyBudget || 10000,
+      defaultMonthlyBudget: monthlyBudget || 0,
+      budgetCycleStartDay: budgetCycleStartDay || 5,
       theme,
       customCategories: [],
     };
@@ -90,13 +96,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAllUsers(prev => [...prev, newUser]);
     setCurrentUser(newUser);
     setIsDemoMode(false);
-    localStorage.setItem('paisa_active_user_id', newUser.id);
+    localStorage.setItem('financeos_active_user_id', newUser.id);
     return newUser;
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!currentUser) return;
-    const updated = { ...currentUser, ...updates };
+    const updated: UserProfile = {
+      ...currentUser,
+      ...updates,
+    };
     await db.users.put(updated);
     setCurrentUser(updated);
     setAllUsers(prev => prev.map(u => (u.id === updated.id ? updated : u)));

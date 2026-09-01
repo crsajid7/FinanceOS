@@ -2,11 +2,11 @@ import React from 'react';
 import {
   X,
   Sparkles,
-  TrendingDown,
   Users,
   HandCoins,
-  ShieldCheck,
-  CheckCircle2,
+  Bookmark,
+  Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatINR } from '../../services/accountingEngine';
@@ -17,7 +17,7 @@ interface WhereDidMyMoneyGoModalProps {
 }
 
 export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ isOpen, onClose }) => {
-  const { whereDidMyMoneyGo, summary } = useFinance();
+  const { whereDidMyMoneyGo, summary, selectedCycle } = useFinance();
 
   if (!isOpen) return null;
 
@@ -36,7 +36,7 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
                 Where Did Your Money Go?
               </h2>
               <span className="text-xs text-indigo-500 font-mono font-bold">
-                {whereDidMyMoneyGo.monthName} Financial Story
+                {selectedCycle.label} Story Report
               </span>
             </div>
           </div>
@@ -50,22 +50,34 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
         </div>
 
         {/* Story Body */}
-        <div className="p-6 overflow-y-auto space-y-5 text-sm text-[var(--card-text-main)] leading-relaxed">
+        <div className="p-6 overflow-y-auto space-y-4 text-sm text-[var(--card-text-main)] leading-relaxed">
           
-          {/* Section 1: Total Received */}
+          {/* Section 1: Total Received / Budget */}
           <div className="bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl p-4 space-y-1">
             <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider block font-mono">
-              1. MONTHLY INFLOW
+              1. CYCLE INFLOW & BUDGET
             </span>
             <p className="font-medium">
-              You had a monthly budget / received <strong>{formatINR(whereDidMyMoneyGo.totalReceived)}</strong> this month.
+              You had a total budget of <strong>{formatINR(whereDidMyMoneyGo.totalReceived)}</strong> for the cycle ({selectedCycle.label}).
             </p>
           </div>
 
-          {/* Section 2: Personal Spending & Top Categories */}
+          {/* Section 2: Reserved Funds */}
+          {whereDidMyMoneyGo.totalReserved > 0 && (
+            <div className="bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl p-4 space-y-1">
+              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block font-mono">
+                2. RESERVED FOR BILLS & RENT
+              </span>
+              <p className="font-medium">
+                You committed <strong>{formatINR(whereDidMyMoneyGo.totalReserved)}</strong> in reserved money for non-discretionary expenses.
+              </p>
+            </div>
+          )}
+
+          {/* Section 3: Personal Spending & Top Categories */}
           <div className="bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl p-4 space-y-2">
             <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block font-mono">
-              2. ACTUAL PERSONAL SPENDING
+              3. ACTUAL PERSONAL SPENDING
             </span>
             <p className="font-medium">
               <strong>{formatINR(whereDidMyMoneyGo.actualPersonalSpending)}</strong> was consumed in personal expenses.
@@ -73,7 +85,7 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
             
             {whereDidMyMoneyGo.topCategories.length > 0 && (
               <div className="pt-2 border-t border-[var(--card-divider)] space-y-1.5">
-                <span className="text-xs text-[var(--card-text-sub)] block font-medium">Your biggest spending categories:</span>
+                <span className="text-xs text-[var(--card-text-sub)] block font-medium">Your highest expense areas:</span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {whereDidMyMoneyGo.topCategories.map((c, i) => (
                     <div key={c.category} className="bg-black/10 dark:bg-black/10 p-2.5 rounded-xl border border-[var(--card-divider)] text-xs shadow-sm">
@@ -87,11 +99,11 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
             )}
           </div>
 
-          {/* Section 3: Shared Friend Bills */}
+          {/* Section 4: Shared Friend Bills */}
           <div className="bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl p-4 space-y-1.5">
             <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center space-x-1 font-mono">
               <Users className="w-3.5 h-3.5" />
-              <span>3. SHARED FRIEND BILLS</span>
+              <span>4. SHARED FRIEND EXPENSES</span>
             </span>
             <p>
               You paid <strong>{formatINR(whereDidMyMoneyGo.paidForOthers)}</strong> on behalf of friends during group activities.
@@ -103,14 +115,14 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
             </div>
           </div>
 
-          {/* Section 4: Lending */}
+          {/* Section 5: Lending */}
           <div className="bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl p-4 space-y-1.5">
             <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider flex items-center space-x-1 font-mono">
               <HandCoins className="w-3.5 h-3.5" />
-              <span>4. MONEY LENT</span>
+              <span>5. DIRECT LOANS</span>
             </span>
             <p>
-              You lent <strong>{formatINR(whereDidMyMoneyGo.moneyLent)}</strong> directly to friends.
+              You lent <strong>{formatINR(whereDidMyMoneyGo.moneyLent)}</strong> to friends.
             </p>
             <div className="flex items-center space-x-3 text-xs pt-1 font-mono-num">
               <span className="text-emerald-500">Repaid: {formatINR(whereDidMyMoneyGo.repaidLoans)}</span>
@@ -119,17 +131,23 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
             </div>
           </div>
 
-          {/* Final Left to Spend Callout */}
-          <div className="p-4 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] rounded-2xl flex items-center justify-between text-[var(--card-text-main)] shadow-md">
+          {/* Spendable / Over Budget Callout */}
+          <div className={`p-4 rounded-2xl border flex items-center justify-between shadow-sm ${
+            summary.isOverBudget
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-500'
+              : 'bg-black/10 dark:bg-black/10 border-[var(--card-divider)] text-[var(--card-text-main)]'
+          }`}>
             <div>
-              <span className="text-xs text-[var(--card-text-sub)] font-bold block uppercase font-mono">REMAINING BUDGET</span>
+              <span className="text-xs text-[var(--card-text-sub)] font-bold block uppercase font-mono">
+                {summary.isOverBudget ? 'OVER-BUDGET' : 'REMAINING SPENDABLE'}
+              </span>
               <span className="text-2xl font-black font-mono-num block mt-0.5">
-                {formatINR(whereDidMyMoneyGo.remainingBudget)}
+                {summary.isOverBudget ? `${formatINR(summary.overBudgetAmount)} OVER` : formatINR(summary.spendableMoney)}
               </span>
             </div>
             <div className="text-right text-xs text-[var(--card-text-sub)] font-mono-num">
-              <span>{summary.daysRemaining} days left</span>
-              <span className="block text-indigo-500 font-bold">{formatINR(summary.recommendedDailyPace)}/day target</span>
+              <span>{selectedCycle.daysRemaining} days left</span>
+              <span className="block text-indigo-500 font-bold">{formatINR(summary.recommendedDailyPace)}/day pace</span>
             </div>
           </div>
 
