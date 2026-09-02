@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Home,
   Clock,
@@ -32,6 +32,17 @@ export const AppShell: React.FC<AppShellProps> = ({
   children,
 }) => {
   const { currentUser, theme, toggleTheme } = useAuth();
+  const mainContentRef = useRef<HTMLElement>(null);
+
+  // Reset scroll position to top whenever changing main pages/tabs
+  useEffect(() => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTop = 0;
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [currentTab]);
 
   const navItems: { id: TabType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'home', label: 'Home', icon: Home },
@@ -164,7 +175,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         </header>
 
         {/* Dynamic Body Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main ref={mainContentRef} className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {children}
         </main>
       </div>

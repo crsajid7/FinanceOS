@@ -73,20 +73,22 @@ export const MonthScreen: React.FC<MonthScreenProps> = ({ onOpenWhereDidMoneyGo 
         </div>
 
         {/* Period Chips */}
-        <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1 justify-center">
-          {PERIOD_OPTIONS.map(opt => (
-            <button
-              key={opt.id}
-              onClick={() => setSelectedPeriod(opt.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-colors border shadow-sm ${
-                selectedPeriod === opt.id
-                  ? 'bg-indigo-600 text-white border-transparent'
-                  : 'theme-card text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="w-full max-w-full overflow-x-auto no-scrollbar pb-1">
+          <div className="flex space-x-2 min-w-max px-1 sm:justify-center">
+            {PERIOD_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setSelectedPeriod(opt.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-colors border shadow-sm flex-shrink-0 ${
+                  selectedPeriod === opt.id
+                    ? 'bg-indigo-600 text-white border-transparent'
+                    : 'theme-card text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

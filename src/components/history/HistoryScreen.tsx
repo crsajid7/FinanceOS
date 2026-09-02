@@ -218,28 +218,30 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
         </div>
 
         {/* Filter Chips */}
-        <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1">
-          {[
-            { id: 'ALL', label: 'All' },
-            { id: 'EXPENSE', label: 'Spending' },
-            { id: 'SPLIT', label: 'Friend Splits' },
-            { id: 'LENDING', label: 'Lending' },
-            { id: 'BORROW', label: 'Borrowed & Repaid' },
-            { id: 'MONEY_IN', label: 'Money In' },
-            { id: 'TRANSFER', label: 'Transfers & Adjustments' },
-          ].map(chip => (
-            <button
-              key={chip.id}
-              onClick={() => setFilterType(chip.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-colors border shadow-sm ${
-                filterType === chip.id
-                  ? 'bg-indigo-600 text-white border-transparent'
-                  : 'theme-card text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
-              }`}
-            >
-              {chip.label}
-            </button>
-          ))}
+        <div className="w-full max-w-full overflow-x-auto no-scrollbar pb-1">
+          <div className="flex space-x-2 min-w-max px-1">
+            {[
+              { id: 'ALL', label: 'All' },
+              { id: 'EXPENSE', label: 'Spending' },
+              { id: 'SPLIT', label: 'Friend Splits' },
+              { id: 'LENDING', label: 'Lending' },
+              { id: 'BORROW', label: 'Borrowed & Repaid' },
+              { id: 'MONEY_IN', label: 'Money In' },
+              { id: 'TRANSFER', label: 'Transfers & Adjustments' },
+            ].map(chip => (
+              <button
+                key={chip.id}
+                onClick={() => setFilterType(chip.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-colors border shadow-sm flex-shrink-0 ${
+                  filterType === chip.id
+                    ? 'bg-indigo-600 text-white border-transparent'
+                    : 'theme-card text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
