@@ -11,6 +11,7 @@ import {
   Landmark,
   Banknote,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
@@ -22,7 +23,7 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, allUsers, switchUser, createCustomProfile, theme, toggleTheme } = useAuth();
+  const { currentUser, allUsers, switchUser, createCustomProfile, deleteProfile, theme, toggleTheme } = useAuth();
   const {
     accounts,
     exportAllData,
@@ -44,6 +45,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
     await createCustomProfile(newProfileName.trim());
     setNewProfileName('');
     setShowCreateProfile(false);
+  };
+
+  const handleDeleteProfile = async (e: React.MouseEvent, userId: string, userName: string) => {
+    e.stopPropagation();
+    if (allUsers.length <= 1) {
+      alert('You must have at least one profile.');
+      return;
+    }
+    if (window.confirm(`Delete profile "${userName}" and all its financial history? This action cannot be undone.`)) {
+      await deleteProfile(userId);
+    }
   };
 
   const handleExportBackup = async () => {
@@ -78,7 +90,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   };
 
   const handleResetDataToZero = async () => {
-    if (window.confirm('Reset all financial records to clean ₹0 state?')) {
+    if (window.confirm('Reset all financial records for current profile to clean ₹0 state?')) {
       await clearData();
       onClose();
     }
@@ -189,36 +201,67 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
           )}
         </div>
 
-        {/* 4. Local User Profiles Switcher */}
+        {/* 4. Local User Profiles Switcher with Floating Delete Option */}
         <div className="space-y-2 pt-1 border-t border-[var(--card-divider)]">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] px-1 font-mono">
-              SWITCH LOCAL PROFILE
+              PROFILES ON THIS DEVICE
             </span>
             <button
               onClick={() => setShowCreateProfile(true)}
               className="text-xs font-bold text-indigo-500 hover:underline flex items-center space-x-1"
             >
               <Plus className="w-3 h-3" />
-              <span>New</span>
+              <span>New Profile</span>
             </button>
           </div>
 
-          <div className="space-y-1.5">
-            {allUsers.map(u => (
-              <button
-                key={u.id}
-                onClick={() => switchUser(u.id)}
-                className={`w-full flex items-center justify-between p-3 rounded-2xl border text-xs transition-colors shadow-sm ${
-                  u.id === currentUser.id
-                    ? 'bg-indigo-600 text-white border-transparent font-bold'
-                    : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-main)]'
-                }`}
-              >
-                <span>{u.name}</span>
-                {u.id === currentUser.id && <Check className="w-3.5 h-3.5" />}
-              </button>
-            ))}
+          <div className="space-y-2">
+            {allUsers.map(u => {
+              const isActive = u.id === currentUser.id;
+              return (
+                <div
+                  key={u.id}
+                  onClick={() => switchUser(u.id)}
+                  className={`group relative w-full flex items-center justify-between p-3.5 rounded-2xl border text-xs cursor-pointer transition-all shadow-sm ${
+                    isActive
+                      ? 'bg-indigo-600 text-white border-transparent font-bold'
+                      : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-main)] hover:border-black/20 dark:hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0 pr-12">
+                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)]'
+                    }`}>
+                      {u.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="truncate">
+                      <span className="block truncate">{u.name}</span>
+                      {isActive && <span className="text-[10px] opacity-80 block font-normal">Active profile</span>}
+                    </div>
+                  </div>
+
+                  {/* Right side status and floating delete action */}
+                  <div className="flex items-center space-x-2 flex-shrink-0">
+                    {isActive && <Check className="w-4 h-4 text-white" />}
+                    
+                    {allUsers.length > 1 && (
+                      <button
+                        onClick={(e) => handleDeleteProfile(e, u.id, u.name)}
+                        className={`p-1.5 rounded-xl transition-all shadow-sm ${
+                          isActive
+                            ? 'bg-white/20 hover:bg-rose-500 text-white'
+                            : 'bg-black/10 dark:bg-black/10 hover:bg-rose-500 text-[var(--card-text-sub)] hover:text-white'
+                        }`}
+                        title={`Delete profile ${u.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -235,6 +278,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                 placeholder="e.g. Rahul, Priya"
                 className="w-full bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-xs px-3 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
                 required
+                autoFocus
               />
             </div>
             <div className="flex space-x-2 pt-1">
@@ -262,7 +306,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
             className="w-full py-2.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-500 rounded-2xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset All Data to ₹0 Clean State</span>
+            <span>Reset Current Profile Data to ₹0</span>
           </button>
         </div>
 

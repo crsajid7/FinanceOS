@@ -10,6 +10,7 @@ interface AuthContextType {
   toggleTheme: () => void;
   switchUser: (userId: string) => Promise<void>;
   createCustomProfile: (name: string) => Promise<UserProfile>;
+  deleteProfile: (userId: string) => Promise<void>;
   resetToDemo: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   allUsers: UserProfile[];
@@ -93,6 +94,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newUser;
   };
 
+  const deleteProfile = async (userId: string) => {
+    // Delete user and their associated data
+    await db.users.delete(userId);
+    await db.transactions.where('userId').equals(userId).delete();
+    await db.people.where('userId').equals(userId).delete();
+    await db.reservedMoney.where('userId').equals(userId).delete();
+    await db.accounts.where('userId').equals(userId).delete();
+
+    const remainingUsers = allUsers.filter(u => u.id !== userId);
+    if (remainingUsers.length === 0) {
+      await db.users.add(DEMO_USER);
+      setAllUsers([DEMO_USER]);
+      setCurrentUser(DEMO_USER);
+      setIsDemoMode(true);
+      localStorage.setItem('financeos_active_user_id', DEMO_USER.id);
+    } else {
+      setAllUsers(remainingUsers);
+      if (currentUser.id === userId) {
+        const nextUser = remainingUsers[0];
+        setCurrentUser(nextUser);
+        setIsDemoMode(nextUser.id === DEMO_USER.id);
+        localStorage.setItem('financeos_active_user_id', nextUser.id);
+      }
+    }
+  };
+
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!currentUser) return;
     const updated: UserProfile = {
@@ -117,6 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toggleTheme,
         switchUser,
         createCustomProfile,
+        deleteProfile,
         resetToDemo,
         updateProfile,
         allUsers,
