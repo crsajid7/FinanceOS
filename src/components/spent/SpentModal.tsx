@@ -3,7 +3,8 @@ import {
   X,
   Users,
   HandCoins,
-  Sparkles,
+  Wand2,
+  Lightbulb,
   Check,
   Plus,
   ArrowRight,
@@ -17,7 +18,6 @@ import { StandardCategory, MoneyLocationId } from '../../types/finance';
 import { getCategorySuggestionForAmount, getFrequentPeople } from '../../services/smartSuggestions';
 import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
 import { validateSplit, formatINR } from '../../services/accountingEngine';
-import confetti from 'canvas-confetti';
 
 const STANDARD_CATEGORIES: { name: StandardCategory; emoji: string }[] = [
   { name: 'Food', emoji: '🍔' },
@@ -268,17 +268,6 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
         );
       }
 
-      try {
-        confetti({
-          particleCount: 25,
-          spread: 45,
-          origin: { y: 0.85 },
-          colors: ['#10b981', '#6366f1', '#3b82f6'],
-        });
-      } catch {
-        // Fallback
-      }
-
       onClose();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save transaction.';
@@ -373,7 +362,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
             }`}
             title="Type naturally e.g. Spent 50 on food"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Wand2 className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -384,7 +373,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           {mode === 'NL' && (
             <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-2xl space-y-2">
               <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1">
-                <Sparkles className="w-3.5 h-3.5" />
+                <Wand2 className="w-3.5 h-3.5" />
                 <span>Type naturally in plain English</span>
               </label>
               <div className="flex space-x-2">
@@ -485,7 +474,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
               className="w-full flex items-center justify-between px-3.5 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-500 transition-colors"
             >
               <div className="flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                <Lightbulb className="w-3.5 h-3.5 text-indigo-500" />
                 <span>You often spend ₹{amountStr} on <strong>{suggestedCat}</strong></span>
               </div>
               <span className="font-bold underline">Select</span>

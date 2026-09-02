@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   X,
-  Sparkles,
+  BarChart3,
   Users,
   HandCoins,
   Landmark,
@@ -28,7 +28,7 @@ export const WhereDidMyMoneyGoModal: React.FC<WhereDidMyMoneyGoModalProps> = ({ 
         <div className="p-5 border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-500 flex items-center justify-center font-bold">
-              <Sparkles className="w-4 h-4" />
+              <BarChart3 className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-base font-black text-[var(--card-text-main)] tracking-tight">

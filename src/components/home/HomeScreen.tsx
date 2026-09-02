@@ -6,7 +6,8 @@ import {
   ArrowRightLeft,
   Bookmark,
   Scale,
-  Sparkles,
+  Wallet,
+  BarChart3,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
@@ -78,7 +79,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               onClick={() => setShowOpeningModal(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl theme-card text-xs font-mono font-bold hover:border-indigo-500 transition-colors shadow-sm"
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <Wallet className="w-3.5 h-3.5 text-indigo-500" />
               <span>Set Starting Cash</span>
             </button>
           </div>
@@ -102,9 +103,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </span>
           <button
             onClick={onOpenWhereDidMoneyGo}
-            className="text-xs font-bold text-indigo-500 hover:underline flex items-center space-x-1"
+            className="text-xs font-bold text-indigo-500 hover:underline flex items-center space-x-1.5"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <BarChart3 className="w-3.5 h-3.5" />
             <span>Story Report</span>
           </button>
         </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Check, Landmark, Banknote } from 'lucide-react';
+import { X, Wallet, Check, Landmark, Banknote } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatINR } from '../../services/accountingEngine';
 
@@ -33,7 +33,7 @@ export const OpeningBalanceModal: React.FC<OpeningBalanceModalProps> = ({ isOpen
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[var(--card-divider)]">
           <div className="flex items-center space-x-2">
-            <Sparkles className="w-4 h-4 text-indigo-500" />
+            <Wallet className="w-4 h-4 text-indigo-500" />
             <h3 className="text-base font-black text-[var(--card-text-main)]">Set Starting Balance</h3>
           </div>
           <button

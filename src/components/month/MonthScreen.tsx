@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Sparkles,
+  BarChart3,
   Bookmark,
   Plus,
   Trash2,
@@ -98,9 +98,9 @@ export const MonthScreen: React.FC<MonthScreenProps> = ({ onOpenWhereDidMoneyGo 
           </span>
           <button
             onClick={onOpenWhereDidMoneyGo}
-            className="text-xs font-bold text-indigo-500 hover:underline flex items-center space-x-1"
+            className="text-xs font-bold text-indigo-500 hover:underline flex items-center space-x-1.5"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <BarChart3 className="w-3.5 h-3.5" />
             <span>Story Report</span>
           </button>
         </div>

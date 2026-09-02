@@ -7,10 +7,12 @@ import {
   Clock,
   ArrowRightLeft,
   Scale,
-  Sparkles,
   Landmark,
   Banknote,
   ArrowDownLeft,
+  ArrowUpRight,
+  Utensils,
+  Wallet,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { Transaction } from '../../types/finance';
@@ -79,12 +81,40 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
     return Object.entries(groups);
   }, [filteredTransactions]);
 
+  const renderTransactionIcon = (tx: Transaction) => {
+    if (tx.type === 'MONEY_RECEIVED' || tx.type === 'REFUND' || tx.type === 'OPENING_BALANCE') {
+      return <ArrowDownLeft className="w-4 h-4 text-emerald-500" />;
+    }
+    if (tx.type === 'BORROWED_MONEY') {
+      return <HandCoins className="w-4 h-4 text-rose-500" />;
+    }
+    if (tx.type === 'BORROW_REPAYMENT' || tx.type === 'REIMBURSEMENT' || tx.type === 'LOAN_REPAYMENT') {
+      return <RotateCcw className="w-4 h-4 text-emerald-500" />;
+    }
+    if (tx.type === 'LENDING') {
+      return <ArrowUpRight className="w-4 h-4 text-amber-500" />;
+    }
+    if (tx.type === 'SPLIT') {
+      return <Users className="w-4 h-4 text-indigo-500" />;
+    }
+    if (tx.type === 'TRANSFER') {
+      return <ArrowRightLeft className="w-4 h-4 text-blue-500" />;
+    }
+    if (tx.type === 'ADJUSTMENT') {
+      return <Scale className="w-4 h-4 text-indigo-400" />;
+    }
+    if (tx.category.toLowerCase() === 'food' || tx.category.toLowerCase() === 'canteen') {
+      return <Utensils className="w-4 h-4 text-rose-500" />;
+    }
+    return <ArrowUpRight className="w-4 h-4 text-rose-500" />;
+  };
+
   const renderBadge = (tx: Transaction) => {
     switch (tx.type) {
       case 'OPENING_BALANCE':
         return (
           <span className="text-[11px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md font-mono flex items-center space-x-1">
-            <Sparkles className="w-3 h-3" />
+            <Wallet className="w-3 h-3" />
             <span>Starting Balance</span>
           </span>
         );
@@ -241,19 +271,21 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
                     >
                       <div className="flex items-center space-x-3.5 min-w-0">
                         <div
-                          className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 font-bold text-xs ${
-                            isPositive
-                              ? 'bg-emerald-500/10 text-emerald-500'
-                              : isLending
-                              ? 'bg-amber-500/10 text-amber-500'
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 font-bold ${
+                            tx.type === 'MONEY_RECEIVED' || tx.type === 'REFUND' || tx.type === 'OPENING_BALANCE'
+                              ? 'bg-emerald-500/10'
+                              : tx.type === 'BORROWED_MONEY'
+                              ? 'bg-rose-500/10'
+                              : tx.type === 'LENDING'
+                              ? 'bg-amber-500/10'
                               : tx.type === 'SPLIT'
-                              ? 'bg-indigo-500/10 text-indigo-500'
+                              ? 'bg-indigo-500/10'
                               : tx.type === 'TRANSFER' || tx.type === 'ADJUSTMENT'
-                              ? 'bg-blue-500/10 text-blue-500'
-                              : 'bg-rose-500/10 text-rose-500'
+                              ? 'bg-blue-500/10'
+                              : 'bg-rose-500/10'
                           }`}
                         >
-                          {isPositive ? '+' : isLending ? '↗' : tx.type === 'SPLIT' ? '👥' : tx.type === 'TRANSFER' ? '↔' : tx.type === 'ADJUSTMENT' ? '⚖️' : '−'}
+                          {renderTransactionIcon(tx)}
                         </div>
 
                         <div className="min-w-0">

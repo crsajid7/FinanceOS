@@ -9,7 +9,6 @@ import {
   User,
   Sun,
   Moon,
-  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 

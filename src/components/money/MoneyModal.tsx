@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Check,
-  Sparkles,
   Landmark,
   Banknote,
   HandCoins,
@@ -12,7 +11,6 @@ import {
 import { useFinance } from '../../context/FinanceContext';
 import { MoneyLocationId } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
-import confetti from 'canvas-confetti';
 
 interface MoneyModalProps {
   isOpen: boolean;
@@ -124,17 +122,6 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
           selectedAccountId,
           note.trim() || undefined
         );
-      }
-
-      try {
-        confetti({
-          particleCount: 25,
-          spread: 45,
-          origin: { y: 0.85 },
-          colors: ['#10b981', '#6366f1', '#3b82f6'],
-        });
-      } catch {
-        // Fallback
       }
 
       onClose();
