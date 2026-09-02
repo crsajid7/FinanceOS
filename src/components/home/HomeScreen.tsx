@@ -56,35 +56,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   return (
     <div className="space-y-5 pb-28 max-w-2xl mx-auto">
       
-      {/* 1. Header: State-Dependent Layout */}
-      {!hasStartingCash ? (
-        /* STATE 1: Starting Cash NOT Set (Onboarding layout) */
-        <div className="flex flex-col items-end pt-1 space-y-1.5">
-          <span className="text-xs font-semibold text-[var(--page-subtitle)] font-mono">
-            {fullDateSingleLine}
+      {/* 1. Header: Hi & Name ALWAYS on Left, Date & Actions on Right */}
+      <div className="flex items-start justify-between pt-1">
+        {/* Left: Hi & User Name ALWAYS present */}
+        <div>
+          <span className="text-xs font-semibold text-[var(--page-subtitle)] block mb-0.5">
+            Hi
           </span>
-          <button
-            onClick={() => setShowOpeningModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl theme-card text-xs font-mono font-bold hover:border-indigo-500 transition-colors shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Set Starting Cash</span>
-          </button>
+          <h1 className="text-xl font-black tracking-tight text-[var(--page-title)]">
+            {currentUser.name}
+          </h1>
         </div>
-      ) : (
-        /* STATE 2: Starting Cash HAS Been Set (Clean mirrored two-column layout) */
-        <div className="flex items-start justify-between pt-1">
-          {/* Left: Hi & User Name */}
-          <div>
-            <span className="text-xs font-semibold text-[var(--page-subtitle)] block mb-0.5">
-              Hi
-            </span>
-            <h1 className="text-xl font-black tracking-tight text-[var(--page-title)]">
-              {currentUser.name}
-            </h1>
-          </div>
 
-          {/* Right: Day & Date with identical typography hierarchy */}
+        {/* Right: Date & Optional Starting Cash setup button */}
+        {!hasStartingCash ? (
+          <div className="flex flex-col items-end space-y-1.5">
+            <span className="text-xs font-semibold text-[var(--page-subtitle)] font-mono">
+              {fullDateSingleLine}
+            </span>
+            <button
+              onClick={() => setShowOpeningModal(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl theme-card text-xs font-mono font-bold hover:border-indigo-500 transition-colors shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Set Starting Cash</span>
+            </button>
+          </div>
+        ) : (
           <div className="text-right">
             <span className="text-xs font-semibold text-[var(--page-subtitle)] block mb-0.5">
               {dayName}
@@ -93,8 +91,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               {dateName}
             </span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 2. Primary Spendable Money Hero Card */}
       <div className="theme-card rounded-3xl p-6 shadow-md space-y-4">
