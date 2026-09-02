@@ -2,33 +2,29 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import {
   Transaction,
   Person,
-  MonthlyBudget,
   Account,
-  MonthlyFinancialSummary,
+  FinancialOverviewSummary,
   PersonBalanceSummary,
   WhereDidMyMoneyGoReport,
   TransactionType,
   ReservedMoney,
-  BudgetCycleRange,
+  ReportingPeriod,
   ExportDataPayload,
+  MoneyLocationId,
 } from '../types/finance';
 import { db } from '../db/database';
 import { useAuth } from './AuthContext';
 import {
-  calculateBudgetCycleSummary,
+  calculateFinancialOverview,
   calculateAllPersonBalances,
   generateWhereDidMyMoneyGo,
-  getBudgetCycleRange,
-  getPreviousBudgetCycles,
   computeAccountBalancesFromLedger,
+  checkSufficientBalance,
   formatLocalDate,
-  parseLocalDate,
 } from '../services/accountingEngine';
 import {
   DEMO_PEOPLE,
   DEMO_ACCOUNTS,
-  DEMO_RESERVED_MONEY,
-  getDemoBudgets,
   getDemoTransactions,
 } from '../db/seedData';
 
@@ -40,31 +36,28 @@ interface AddTransactionPayload {
   date?: string;
   time?: string;
   note?: string;
+  source?: string;
   personId?: string;
   personName?: string;
   splits?: { personId: string; personName: string; amount: number }[];
   expectedDate?: string;
-  accountId?: string;
-  toAccountId?: string;
-  isMonthlyBudget?: boolean;
+  accountId: MoneyLocationId | string; // 'acc_bank' | 'acc_cash'
+  toAccountId?: MoneyLocationId | string; // For TRANSFER
   linkedTransactionId?: string;
 }
 
 interface FinanceContextType {
-  // Budget cycle
-  selectedCycle: BudgetCycleRange;
-  availableCycles: BudgetCycleRange[];
-  setSelectedCycle: (cycle: BudgetCycleRange) => void;
-  selectedMonth: string; // Legacy fallback
-  setSelectedMonth: (month: string) => void;
+  // Reporting Period
+  selectedPeriod: ReportingPeriod;
+  setSelectedPeriod: (period: ReportingPeriod) => void;
 
   // Entities
   transactions: Transaction[];
   people: Person[];
   accounts: Account[];
   reservedMoney: ReservedMoney[];
-  currentBudget: MonthlyBudget | null;
-  summary: MonthlyFinancialSummary;
+  overview: FinancialOverviewSummary;
+  summary: FinancialOverviewSummary; // Backwards-compatible alias for overview
   personBalances: PersonBalanceSummary[];
   whereDidMyMoneyGo: WhereDidMyMoneyGoReport;
   isLoading: boolean;
@@ -74,23 +67,29 @@ interface FinanceContextType {
   updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addPerson: (name: string, phone?: string) => Promise<Person>;
-  updateBudget: (cycleOrMonth: string, totalBudget: number, allocations?: Record<string, number>) => Promise<void>;
-  settleFriendSplit: (personId: string, amount: number, note?: string) => Promise<void>;
-  recordLoanRepaymentDirect: (personId: string, amount: number, note?: string) => Promise<void>;
+  settleFriendSplit: (personId: string, amount: number, accountId?: MoneyLocationId, note?: string) => Promise<void>;
+  recordLoanRepaymentDirect: (personId: string, amount: number, accountId?: MoneyLocationId, note?: string) => Promise<void>;
   
+  // Transfer
+  recordTransfer: (amount: number, fromAccountId: MoneyLocationId, toAccountId: MoneyLocationId, note?: string) => Promise<Transaction>;
+  
+  // Opening Balance
+  recordOpeningBalance: (bankAmount: number, cashAmount: number) => Promise<void>;
+
   // Reserved Money
   addReservation: (amount: number, purpose: string, dueDate?: string) => Promise<ReservedMoney>;
   toggleReservationFulfilled: (id: string) => Promise<void>;
   deleteReservation: (id: string) => Promise<void>;
 
   // Cash Adjustment / Reconciliation
-  recordCashAdjustment: (actualCash: number, accountId: string, reason?: string) => Promise<Transaction>;
+  recordCashAdjustment: (actualAmount: number, accountId: MoneyLocationId, reason?: string) => Promise<Transaction>;
 
-  // Backup
+  // Negative balance checker
+  verifyBalance: (accountId: string, amount: number) => { hasSufficient: boolean; currentBalance: number; missingAmount: number; accountName: string };
+
+  // Backup & Reset
   exportAllData: () => Promise<string>;
   importAllData: (jsonStr: string) => Promise<boolean>;
-
-  // Reset
   resetDemoData: () => Promise<void>;
   clearData: () => Promise<void>;
 }
@@ -100,26 +99,10 @@ const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser, isDemoMode } = useAuth();
   
-  const startDay = currentUser.budgetCycleStartDay || 5;
-
-  // Available cycles and active selected cycle
-  const availableCycles = useMemo(() => {
-    return getPreviousBudgetCycles(12, startDay, new Date());
-  }, [startDay]);
-
-  const [selectedCycle, setSelectedCycle] = useState<BudgetCycleRange>(() => {
-    return getBudgetCycleRange(new Date(), startDay);
-  });
-
-  // Re-sync cycle when user's start day changes
-  useEffect(() => {
-    setSelectedCycle(getBudgetCycleRange(new Date(), startDay));
-  }, [startDay]);
-
+  const [selectedPeriod, setSelectedPeriod] = useState<ReportingPeriod>('THIS_MONTH');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>(DEMO_ACCOUNTS);
   const [reservedMoney, setReservedMoney] = useState<ReservedMoney[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -130,41 +113,29 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const userTx = await db.transactions.where('userId').equals(currentUser.id).toArray();
       const userPeople = await db.people.where('userId').equals(currentUser.id).toArray();
-      const userAccounts = await db.accounts.where('userId').equals(currentUser.id).toArray();
-      const userBudgets = await db.monthlyBudgets.where('userId').equals(currentUser.id).toArray();
       const userReserved = await db.reservedMoney.where('userId').equals(currentUser.id).toArray();
 
-      if (isDemoMode && userTx.length === 0 && userAccounts.length === 0) {
+      if (isDemoMode && userTx.length === 0 && userPeople.length === 0) {
         // Seed initial clean state
         const demoPeople = DEMO_PEOPLE;
         const demoAccounts = DEMO_ACCOUNTS;
-        const demoBudgets = getDemoBudgets(selectedCycle.startDate.substring(0, 7));
-        const demoTx = getDemoTransactions(selectedCycle.startDate.substring(0, 7));
+        const demoTx = getDemoTransactions();
 
         await db.people.bulkPut(demoPeople);
         await db.accounts.bulkPut(demoAccounts);
-        await db.monthlyBudgets.bulkPut(demoBudgets);
         await db.transactions.bulkPut(demoTx);
 
         setPeople(demoPeople);
         setAccounts(demoAccounts);
-        setBudgets(demoBudgets);
         setTransactions(demoTx);
         setReservedMoney([]);
       } else {
-        const initialAccounts = userAccounts.length > 0 ? userAccounts : [
-          { id: 'acc_upi', userId: currentUser.id, name: 'GPay / UPI', type: 'WALLET' as const, balance: 0 },
-          { id: 'acc_bank', userId: currentUser.id, name: 'Primary Bank', type: 'BANK' as const, balance: 0 },
-          { id: 'acc_cash', userId: currentUser.id, name: 'Cash in Wallet', type: 'CASH' as const, balance: 0 },
-        ];
-
-        // Ensure accounts reflect single-source-of-truth from ledger
-        const reconciledAccounts = computeAccountBalancesFromLedger(userTx, initialAccounts);
+        // Compute exact single-source-of-truth balances from transaction ledger
+        const reconciledAccounts = computeAccountBalancesFromLedger(userTx, DEMO_ACCOUNTS);
 
         setTransactions(userTx);
         setPeople(userPeople);
         setAccounts(reconciledAccounts);
-        setBudgets(userBudgets);
         setReservedMoney(userReserved);
       }
     } catch (err) {
@@ -172,38 +143,38 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, isDemoMode, selectedCycle]);
+  }, [currentUser, isDemoMode]);
 
   useEffect(() => {
     loadUserData();
   }, [loadUserData]);
 
-  // Current cycle's budget object
-  const currentBudget = useMemo(() => {
-    return budgets.find(b => b.yearMonth === selectedCycle.cycleKey || b.yearMonth === selectedCycle.startDate.substring(0, 7)) || null;
-  }, [budgets, selectedCycle]);
-
-  // Recomputed physical cash balances based on ledger
+  // Derived Account Balances (Single source of truth)
   const computedAccounts = useMemo(() => {
     return computeAccountBalancesFromLedger(transactions, accounts);
   }, [transactions, accounts]);
 
-  // Reactive financial summary strictly calculated from current cycle
-  const summary = useMemo(() => {
-    return calculateBudgetCycleSummary(selectedCycle, transactions, currentBudget, reservedMoney, computedAccounts);
-  }, [selectedCycle, transactions, currentBudget, reservedMoney, computedAccounts]);
+  // Master Financial Overview Calculation
+  const overview = useMemo(() => {
+    return calculateFinancialOverview(transactions, reservedMoney, selectedPeriod);
+  }, [transactions, reservedMoney, selectedPeriod]);
 
-  // Reactive person balances
+  // Reactive Person Balances (Splits vs Loans)
   const personBalances = useMemo(() => {
     return calculateAllPersonBalances(transactions, people);
   }, [transactions, people]);
 
-  // Reactive Where Did My Money Go report
+  // Reactive Story Report
   const whereDidMyMoneyGo = useMemo(() => {
-    return generateWhereDidMyMoneyGo(selectedCycle, transactions, currentBudget, reservedMoney);
-  }, [selectedCycle, transactions, currentBudget, reservedMoney]);
+    return generateWhereDidMyMoneyGo(transactions, reservedMoney, selectedPeriod);
+  }, [transactions, reservedMoney, selectedPeriod]);
 
-  // Add a new Person
+  // Verify balance before deducting
+  const verifyBalance = useCallback((accountId: string, amount: number) => {
+    return checkSufficientBalance(accountId, amount, computedAccounts);
+  }, [computedAccounts]);
+
+  // Add Person
   const addPerson = async (name: string, phone?: string): Promise<Person> => {
     const trimmed = name.trim();
     const existing = people.find(p => p.name.toLowerCase() === trimmed.toLowerCase());
@@ -232,7 +203,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const now = new Date();
     const date = payload.date || formatLocalDate(now);
     const time = payload.time || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const txCycle = getBudgetCycleRange(date, startDay);
+
+    // Normalize account ID to strictly Bank or Cash
+    const targetAccountId: MoneyLocationId = (payload.accountId === 'acc_cash' || payload.accountId === 'cash')
+      ? 'acc_cash'
+      : 'acc_bank';
+
+    const toAccountId: MoneyLocationId | undefined = payload.toAccountId
+      ? (payload.toAccountId === 'acc_cash' || payload.toAccountId === 'cash' ? 'acc_cash' : 'acc_bank')
+      : undefined;
+
+    // Check balance for deducting transactions
+    if (['EXPENSE', 'SPLIT', 'LENDING', 'TRANSFER'].includes(payload.type)) {
+      const check = verifyBalance(targetAccountId, payload.amount);
+      if (!check.hasSufficient) {
+        throw new Error(`Insufficient funds: You only have ₹${check.currentBalance} in ${check.accountName}.`);
+      }
+    }
 
     // Resolve person if name is provided but no personId
     let personId = payload.personId;
@@ -262,6 +249,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       date,
       time,
       note: payload.note,
+      source: payload.source,
       personId,
       personName,
       splits,
@@ -272,12 +260,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         repaidAmount: 0,
         isSettled: false,
       } : undefined,
-      accountId: payload.accountId || accounts[0]?.id || 'acc_upi',
-      toAccountId: payload.toAccountId,
+      accountId: targetAccountId,
+      toAccountId,
       status: 'ACTIVE',
-      isMonthlyBudget: payload.isMonthlyBudget,
-      budgetCycleKey: txCycle.cycleKey,
-      monthlyBudgetId: txCycle.startDate.substring(0, 7),
       linkedTransactionId: payload.linkedTransactionId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -293,14 +278,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setTransactions(nextTransactions);
     setAccounts(nextAccounts);
-
-    // If marked as cycle budget, update cycle budget record
-    if (payload.isMonthlyBudget) {
-      const existingB = budgets.find(b => b.yearMonth === txCycle.cycleKey);
-      const newTotal = (existingB?.totalBudget || 0) + payload.amount;
-      await updateBudget(txCycle.cycleKey, newTotal);
-    }
-
     return newTx;
   };
 
@@ -341,8 +318,55 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAccounts(nextAccounts);
   };
 
+  // Record Transfer Between Bank and Cash
+  const recordTransfer = async (
+    amount: number,
+    fromAccountId: MoneyLocationId,
+    toAccountId: MoneyLocationId,
+    note?: string
+  ): Promise<Transaction> => {
+    return await addTransaction({
+      type: 'TRANSFER',
+      amount,
+      category: 'Other',
+      accountId: fromAccountId,
+      toAccountId: toAccountId,
+      note: note || `Transfer: ${fromAccountId === 'acc_bank' ? 'Bank → Cash' : 'Cash → Bank'}`,
+    });
+  };
+
+  // Record Opening Balance for user starting with existing money
+  const recordOpeningBalance = async (bankAmount: number, cashAmount: number) => {
+    const today = formatLocalDate(new Date());
+    if (bankAmount > 0) {
+      await addTransaction({
+        type: 'OPENING_BALANCE',
+        amount: bankAmount,
+        category: 'Other',
+        accountId: 'acc_bank',
+        date: today,
+        note: 'Starting Bank Balance',
+      });
+    }
+    if (cashAmount > 0) {
+      await addTransaction({
+        type: 'OPENING_BALANCE',
+        amount: cashAmount,
+        category: 'Other',
+        accountId: 'acc_cash',
+        date: today,
+        note: 'Starting Cash Balance',
+      });
+    }
+  };
+
   // Settle Friend Split
-  const settleFriendSplit = async (personId: string, amount: number, note?: string) => {
+  const settleFriendSplit = async (
+    personId: string,
+    amount: number,
+    accountId: MoneyLocationId = 'acc_bank',
+    note?: string
+  ) => {
     const person = people.find(p => p.id === personId);
     if (!person) return;
 
@@ -350,14 +374,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       type: 'REIMBURSEMENT',
       amount,
       category: 'Other',
+      accountId,
       personId,
       personName: person.name,
-      note: note || `Reimbursement received from ${person.name}`,
+      note: note || `Reimbursement from ${person.name}`,
     });
   };
 
   // Record Loan Repayment
-  const recordLoanRepaymentDirect = async (personId: string, amount: number, note?: string) => {
+  const recordLoanRepaymentDirect = async (
+    personId: string,
+    amount: number,
+    accountId: MoneyLocationId = 'acc_bank',
+    note?: string
+  ) => {
     const person = people.find(p => p.id === personId);
     if (!person) return;
 
@@ -365,35 +395,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       type: 'LOAN_REPAYMENT',
       amount,
       category: 'Other',
+      accountId,
       personId,
       personName: person.name,
-      note: note || `Loan repayment received from ${person.name}`,
-    });
-  };
-
-  // Update or Set Budget for Cycle
-  const updateBudget = async (cycleOrMonth: string, totalBudget: number, allocations?: Record<string, number>) => {
-    const existing = budgets.find(b => b.yearMonth === cycleOrMonth);
-    const updatedBudget: MonthlyBudget = {
-      id: cycleOrMonth,
-      userId: currentUser.id,
-      yearMonth: cycleOrMonth,
-      totalBudget,
-      allocations: allocations || existing?.allocations || {},
-      notes: existing?.notes,
-      createdAt: existing?.createdAt || Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    await db.monthlyBudgets.put(updatedBudget);
-    setBudgets(prev => {
-      const idx = prev.findIndex(b => b.yearMonth === cycleOrMonth);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = updatedBudget;
-        return next;
-      }
-      return [...prev, updatedBudget];
+      note: note || `Loan repaid by ${person.name}`,
     });
   };
 
@@ -439,17 +444,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // Record Cash Adjustment / Missing Money Reconciliation
-  const recordCashAdjustment = async (actualCash: number, accountId: string, reason?: string): Promise<Transaction> => {
+  const recordCashAdjustment = async (
+    actualAmount: number,
+    accountId: MoneyLocationId,
+    reason?: string
+  ): Promise<Transaction> => {
     const targetAccount = computedAccounts.find(a => a.id === accountId) || computedAccounts[0];
     const currentBalance = targetAccount?.balance || 0;
-    const delta = actualCash - currentBalance;
+    const delta = actualAmount - currentBalance;
 
     return await addTransaction({
       type: 'ADJUSTMENT',
       amount: delta,
       category: 'Other',
-      accountId: targetAccount.id,
-      note: reason?.trim() || `Cash balance adjusted to ${actualCash} (diff: ${delta >= 0 ? '+' : ''}${delta})`,
+      accountId,
+      note: reason?.trim() || `Balance adjustment to ${actualAmount} (diff: ${delta >= 0 ? '+' : ''}${delta})`,
     });
   };
 
@@ -458,17 +467,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const userTx = await db.transactions.where('userId').equals(currentUser.id).toArray();
     const userPeople = await db.people.where('userId').equals(currentUser.id).toArray();
     const userAccounts = await db.accounts.where('userId').equals(currentUser.id).toArray();
-    const userBudgets = await db.monthlyBudgets.where('userId').equals(currentUser.id).toArray();
     const userReserved = await db.reservedMoney.where('userId').equals(currentUser.id).toArray();
 
     const payload: ExportDataPayload = {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       user: currentUser,
       accounts: userAccounts,
       transactions: userTx,
       people: userPeople,
-      budgets: userBudgets,
       reservedMoney: userReserved,
     };
 
@@ -491,9 +498,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (parsed.transactions && parsed.transactions.length > 0) {
         await db.transactions.bulkPut(parsed.transactions.map(t => ({ ...t, userId: currentUser.id })));
       }
-      if (parsed.budgets && parsed.budgets.length > 0) {
-        await db.monthlyBudgets.bulkPut(parsed.budgets.map(b => ({ ...b, userId: currentUser.id })));
-      }
       if (parsed.reservedMoney && parsed.reservedMoney.length > 0) {
         await db.reservedMoney.bulkPut(parsed.reservedMoney.map(r => ({ ...r, userId: currentUser.id })));
       }
@@ -513,22 +517,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       await db.transactions.where('userId').equals(currentUser.id).delete();
       await db.people.where('userId').equals(currentUser.id).delete();
       await db.accounts.where('userId').equals(currentUser.id).delete();
-      await db.monthlyBudgets.where('userId').equals(currentUser.id).delete();
       await db.reservedMoney.where('userId').equals(currentUser.id).delete();
 
       const demoPeople = DEMO_PEOPLE;
       const demoAccounts = DEMO_ACCOUNTS;
-      const demoBudgets = getDemoBudgets(selectedCycle.startDate.substring(0, 7));
-      const demoTx = getDemoTransactions(selectedCycle.startDate.substring(0, 7));
+      const demoTx = getDemoTransactions();
 
       await db.people.bulkPut(demoPeople);
       await db.accounts.bulkPut(demoAccounts);
-      await db.monthlyBudgets.bulkPut(demoBudgets);
       await db.transactions.bulkPut(demoTx);
 
       setPeople(demoPeople);
       setAccounts(demoAccounts);
-      setBudgets(demoBudgets);
       setTransactions(demoTx);
       setReservedMoney([]);
     } finally {
@@ -540,13 +540,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const clearData = async () => {
     await db.transactions.where('userId').equals(currentUser.id).delete();
     await db.people.where('userId').equals(currentUser.id).delete();
-    await db.monthlyBudgets.where('userId').equals(currentUser.id).delete();
     await db.reservedMoney.where('userId').equals(currentUser.id).delete();
     setTransactions([]);
     setPeople([]);
-    setBudgets([]);
     setReservedMoney([]);
-    const resetAccounts = accounts.map(a => ({ ...a, balance: 0 }));
+    const resetAccounts = DEMO_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
     for (const a of resetAccounts) {
       await db.accounts.put(a);
     }
@@ -556,20 +554,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   return (
     <FinanceContext.Provider
       value={{
-        selectedCycle,
-        availableCycles,
-        setSelectedCycle,
-        selectedMonth: selectedCycle.startDate.substring(0, 7),
-        setSelectedMonth: (monthStr: string) => {
-          const cy = getBudgetCycleRange(parseLocalDate(`${monthStr}-05`), startDay);
-          setSelectedCycle(cy);
-        },
+        selectedPeriod,
+        setSelectedPeriod,
         transactions,
         people,
         accounts: computedAccounts,
         reservedMoney,
-        currentBudget,
-        summary,
+        overview,
+        summary: overview,
         personBalances,
         whereDidMyMoneyGo,
         isLoading,
@@ -577,13 +569,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateTransaction,
         deleteTransaction,
         addPerson,
-        updateBudget,
         settleFriendSplit,
         recordLoanRepaymentDirect,
+        recordTransfer,
+        recordOpeningBalance,
         addReservation,
         toggleReservationFulfilled,
         deleteReservation,
         recordCashAdjustment,
+        verifyBalance,
         exportAllData,
         importAllData,
         resetDemoData,

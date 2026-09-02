@@ -3,16 +3,16 @@ import {
   X,
   Trash2,
   Edit2,
-  Calendar,
-  Clock,
   Check,
   Users,
   HandCoins,
-  ArrowRight,
-  RotateCcw,
+  Landmark,
+  Banknote,
+  Scale,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
-import { Transaction } from '../../types/finance';
+import { Transaction, MoneyLocationId } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
 
 interface TransactionDetailModalProps {
@@ -24,23 +24,27 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   transaction,
   onClose,
 }) => {
-  const { deleteTransaction, updateTransaction, people } = useFinance();
+  const { deleteTransaction, updateTransaction, verifyBalance } = useFinance();
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
   const [amountStr, setAmountStr] = useState<string>('');
   const [userShareStr, setUserShareStr] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<MoneyLocationId>('acc_bank');
   const [category, setCategory] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [date, setDate] = useState<string>('');
+  const [errorMsg, setErrorMsg] = useState<string>('');
 
   useEffect(() => {
     if (transaction) {
       setAmountStr(String(transaction.amount));
       setUserShareStr(String(transaction.userShare || Math.round(transaction.amount / 2)));
+      setSelectedAccountId((transaction.accountId === 'acc_cash' || transaction.accountId === 'cash') ? 'acc_cash' : 'acc_bank');
       setCategory(transaction.category);
       setNote(transaction.note || '');
       setDate(transaction.date);
       setIsEditing(false);
+      setErrorMsg('');
     }
   }, [transaction]);
 
@@ -49,16 +53,22 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const handleStartEdit = () => {
     setAmountStr(String(transaction.amount));
     setUserShareStr(String(transaction.userShare || Math.round(transaction.amount / 2)));
+    setSelectedAccountId((transaction.accountId === 'acc_cash' || transaction.accountId === 'cash') ? 'acc_cash' : 'acc_bank');
     setCategory(transaction.category);
     setNote(transaction.note || '');
     setDate(transaction.date);
     setIsEditing(true);
+    setErrorMsg('');
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
     const num = parseFloat(amountStr);
-    if (!num || num <= 0) return;
+    if (!num || num <= 0) {
+      setErrorMsg('Please enter a valid amount greater than ₹0.');
+      return;
+    }
 
     let userShare = transaction.userShare;
     if (transaction.type === 'SPLIT') {
@@ -68,6 +78,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     await updateTransaction(transaction.id, {
       amount: num,
       userShare,
+      accountId: selectedAccountId,
       category,
       note: note.trim() || undefined,
       date: date || transaction.date,
@@ -83,7 +94,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     }
   };
 
-  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(transaction.type);
+  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(transaction.type);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in">
@@ -103,15 +114,21 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         </div>
 
         {!isEditing ? (
-          <div className="space-y-4">
+          <div className="space-y-4 text-xs">
             {/* Amount Hero */}
             <div className="text-center py-3 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl">
               <span
                 className={`text-3xl font-black font-mono-num ${
-                  isPositive ? 'text-emerald-500' : transaction.type === 'LENDING' ? 'text-amber-500' : 'text-rose-500'
+                  isPositive
+                    ? 'text-emerald-500'
+                    : transaction.type === 'LENDING'
+                    ? 'text-amber-500'
+                    : transaction.type === 'TRANSFER'
+                    ? 'text-[var(--card-text-main)]'
+                    : 'text-rose-500'
                 }`}
               >
-                {isPositive ? '+' : '−'} {formatINR(transaction.amount)}
+                {isPositive ? '+' : transaction.type === 'TRANSFER' ? '' : '−'} {formatINR(transaction.amount)}
               </span>
               <span className="text-xs font-bold uppercase text-[var(--card-text-sub)] block mt-1 font-mono">
                 {transaction.type.replace('_', ' ')}
@@ -119,7 +136,15 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             </div>
 
             {/* Details List */}
-            <div className="space-y-2 text-xs">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between p-3 bg-black/5 dark:bg-black/5 rounded-xl border border-[var(--card-divider)]">
+                <span className="text-[var(--card-text-sub)]">Account / Location</span>
+                <span className="font-bold text-[var(--card-text-main)] flex items-center space-x-1">
+                  {transaction.accountId === 'acc_cash' ? <Banknote className="w-3.5 h-3.5 text-emerald-500" /> : <Landmark className="w-3.5 h-3.5 text-indigo-500" />}
+                  <span>{transaction.accountId === 'acc_cash' ? 'Cash in Hand' : 'Bank Account'}</span>
+                </span>
+              </div>
+
               <div className="flex items-center justify-between p-3 bg-black/5 dark:bg-black/5 rounded-xl border border-[var(--card-divider)]">
                 <span className="text-[var(--card-text-sub)]">Category</span>
                 <span className="font-bold text-[var(--card-text-main)]">{transaction.category}</span>
@@ -187,7 +212,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSaveEdit} className="space-y-3">
+          <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
             <div>
               <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Amount (₹)</label>
               <input
@@ -198,6 +223,37 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-sm font-bold px-3.5 py-2 rounded-xl text-[var(--card-text-main)] font-mono-num focus:outline-none focus:border-indigo-500"
                 required
               />
+            </div>
+
+            {/* Account Selector on Edit (Bank vs Cash) */}
+            <div>
+              <label className="text-xs text-[var(--card-text-sub)] block mb-1 font-mono">Account Location</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccountId('acc_bank')}
+                  className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1 ${
+                    selectedAccountId === 'acc_bank'
+                      ? 'bg-indigo-600 text-white border-transparent'
+                      : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
+                  }`}
+                >
+                  <Landmark className="w-3.5 h-3.5" />
+                  <span>Bank</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccountId('acc_cash')}
+                  className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1 ${
+                    selectedAccountId === 'acc_cash'
+                      ? 'bg-emerald-600 text-white border-transparent'
+                      : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
+                  }`}
+                >
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span>Cash</span>
+                </button>
+              </div>
             </div>
 
             {transaction.type === 'SPLIT' && (
@@ -245,6 +301,10 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
               />
             </div>
+
+            {errorMsg && (
+              <p className="text-xs text-rose-500">{errorMsg}</p>
+            )}
 
             <div className="flex space-x-2 pt-2">
               <button

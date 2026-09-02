@@ -8,12 +8,14 @@ import {
   Plus,
   ArrowRight,
   AlertCircle,
+  Landmark,
+  Banknote,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
-import { StandardCategory } from '../../types/finance';
+import { StandardCategory, MoneyLocationId } from '../../types/finance';
 import { getCategorySuggestionForAmount, getFrequentPeople } from '../../services/smartSuggestions';
 import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
-import { validateSplit } from '../../services/accountingEngine';
+import { validateSplit, formatINR } from '../../services/accountingEngine';
 import confetti from 'canvas-confetti';
 
 const STANDARD_CATEGORIES: { name: StandardCategory; emoji: string }[] = [
@@ -35,13 +37,13 @@ interface SpentModalProps {
 type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'NL';
 
 export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
-  const { transactions, people, addTransaction, accounts } = useFinance();
+  const { transactions, people, addTransaction, accounts, verifyBalance } = useFinance();
   const [mode, setMode] = useState<Mode>('EXPENSE');
 
   const [amountStr, setAmountStr] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Food');
   const [note, setNote] = useState<string>('');
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<MoneyLocationId>('acc_bank');
 
   const [userShareStr, setUserShareStr] = useState<string>('');
   const [splitFriends, setSplitFriends] = useState<{ personId: string; personName: string; amountStr: string }[]>([]);
@@ -74,14 +76,12 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
       setNlText('');
       setNlError('');
       setErrorMsg('');
-      if (accounts.length > 0) {
-        setSelectedAccountId(accounts[0].id);
-      }
+      setSelectedAccountId('acc_bank');
       setTimeout(() => {
         amountInputRef.current?.focus();
       }, 50);
     }
-  }, [isOpen, accounts]);
+  }, [isOpen]);
 
   const numericAmount = parseFloat(amountStr) || 0;
   useEffect(() => {
@@ -111,6 +111,8 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const frequentPeople = getFrequentPeople(transactions, people, 4);
+  const bankAccount = accounts.find(a => a.id === 'acc_bank') || accounts[0];
+  const cashAccount = accounts.find(a => a.id === 'acc_cash') || accounts[1];
 
   const handleAddSplitFriend = (personId: string, personName: string) => {
     if (splitFriends.some(f => f.personId === personId || f.personName.toLowerCase() === personName.toLowerCase())) {
@@ -159,7 +161,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     setErrorMsg('');
 
     if (numericAmount <= 0) {
-      setErrorMsg('Please enter a valid amount greater than ₹0');
+      setErrorMsg('Please enter a valid amount greater than ₹0.');
+      return;
+    }
+
+    // Check account balance to prevent negative balances
+    const check = verifyBalance(selectedAccountId, numericAmount);
+    if (!check.hasSufficient) {
+      setErrorMsg(`You only have ${formatINR(check.currentBalance)} in ${check.accountName}.`);
       return;
     }
 
@@ -183,7 +192,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
         const splitVal = validateSplit(numericAmount, userShare, friendShares);
         if (!splitVal.isValid) {
-          setErrorMsg(splitVal.errorMessage || 'Split shares do not add up to total paid.');
+          setErrorMsg(splitVal.errorMessage || 'Split shares do not add up to total bill paid.');
           return;
         }
 
@@ -316,7 +325,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
           
           {/* Natural Language Assist Bar */}
           {mode === 'NL' && (
@@ -367,6 +376,50 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 className="w-full text-3xl font-black text-[var(--card-text-main)] bg-transparent focus:outline-none font-mono-num tracking-tight"
                 required
               />
+            </div>
+          </div>
+
+          {/* Paid From? (Strictly Bank Account or Cash in Hand) */}
+          <div>
+            <label className="text-xs font-bold text-[var(--card-text-sub)] uppercase tracking-wider block mb-2 font-mono">
+              PAID FROM?
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedAccountId('acc_bank')}
+                className={`p-3 rounded-2xl border text-xs font-bold flex flex-col items-center justify-center space-y-1 transition-all shadow-sm ${
+                  selectedAccountId === 'acc_bank'
+                    ? 'bg-indigo-600 text-white border-transparent'
+                    : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+                }`}
+              >
+                <div className="flex items-center space-x-1.5">
+                  <Landmark className="w-4 h-4" />
+                  <span>Bank Account</span>
+                </div>
+                <span className="text-[10px] opacity-80 font-mono">
+                  Avail: {formatINR(bankAccount?.balance || 0)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedAccountId('acc_cash')}
+                className={`p-3 rounded-2xl border text-xs font-bold flex flex-col items-center justify-center space-y-1 transition-all shadow-sm ${
+                  selectedAccountId === 'acc_cash'
+                    ? 'bg-emerald-600 text-white border-transparent'
+                    : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+                }`}
+              >
+                <div className="flex items-center space-x-1.5">
+                  <Banknote className="w-4 h-4" />
+                  <span>Cash in Hand</span>
+                </div>
+                <span className="text-[10px] opacity-80 font-mono">
+                  Avail: {formatINR(cashAccount?.balance || 0)}
+                </span>
+              </button>
             </div>
           </div>
 

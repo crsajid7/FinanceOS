@@ -1,7 +1,6 @@
 import {
   UserProfile,
   Person,
-  MonthlyBudget,
   Account,
   Transaction,
   ReservedMoney,
@@ -12,8 +11,6 @@ export const DEMO_USER: UserProfile = {
   name: 'Student User',
   email: 'student@financeos.app',
   currency: '₹',
-  defaultMonthlyBudget: 0,
-  budgetCycleStartDay: 5, // Starts 5th of every month (e.g. Sep 5 → Oct 4)
   theme: 'light',
   customCategories: ['Food', 'Groceries', 'Transport', 'College', 'Entertainment', 'Personal', 'Rent', 'Other'],
 };
@@ -41,23 +38,16 @@ export const DEMO_PEOPLE: Person[] = [
 
 export const DEMO_ACCOUNTS: Account[] = [
   {
-    id: 'acc_upi',
-    userId: DEMO_USER.id,
-    name: 'GPay / UPI',
-    type: 'WALLET',
-    balance: 0,
-  },
-  {
     id: 'acc_bank',
     userId: DEMO_USER.id,
-    name: 'Primary Bank',
+    name: 'Bank Account',
     type: 'BANK',
     balance: 0,
   },
   {
     id: 'acc_cash',
     userId: DEMO_USER.id,
-    name: 'Cash',
+    name: 'Cash in Hand',
     type: 'CASH',
     balance: 0,
   },
@@ -65,22 +55,7 @@ export const DEMO_ACCOUNTS: Account[] = [
 
 export const DEMO_RESERVED_MONEY: ReservedMoney[] = [];
 
-export function getDemoBudgets(currentYearMonth: string): MonthlyBudget[] {
-  return [
-    {
-      id: currentYearMonth,
-      userId: DEMO_USER.id,
-      yearMonth: currentYearMonth,
-      totalBudget: 0,
-      allocations: {},
-      notes: 'Monthly budget',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    },
-  ];
-}
-
-export function getDemoTransactions(_currentYearMonth: string): Transaction[] {
+export function getDemoTransactions(): Transaction[] {
   // Fresh clean slate reset to 0
   return [];
 }

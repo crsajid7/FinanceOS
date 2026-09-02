@@ -4,15 +4,13 @@ import {
   User,
   Plus,
   RotateCcw,
-  Trash2,
-  Check,
   Download,
   Upload,
-  Calendar,
   Sun,
   Moon,
-  AlertCircle,
-  FileJson,
+  Landmark,
+  Banknote,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
@@ -24,19 +22,16 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, allUsers, switchUser, createCustomProfile, updateProfile, theme, toggleTheme } = useAuth();
+  const { currentUser, allUsers, switchUser, createCustomProfile, theme, toggleTheme } = useAuth();
   const {
     accounts,
     exportAllData,
     importAllData,
-    resetDemoData,
     clearData,
   } = useFinance();
 
   const [showCreateProfile, setShowCreateProfile] = useState<boolean>(false);
   const [newProfileName, setNewProfileName] = useState<string>('');
-  const [newProfileBudget, setNewProfileBudget] = useState<string>('0');
-  const [newProfileStartDay, setNewProfileStartDay] = useState<string>('5');
   
   const [importStatus, setImportStatus] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,20 +41,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   const handleCreateProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProfileName.trim()) return;
-    await createCustomProfile(
-      newProfileName.trim(),
-      parseFloat(newProfileBudget) || 0,
-      parseInt(newProfileStartDay, 10) || 5
-    );
+    await createCustomProfile(newProfileName.trim());
     setNewProfileName('');
     setShowCreateProfile(false);
-  };
-
-  const handleUpdateCycleStartDay = async (dayVal: string) => {
-    const day = parseInt(dayVal, 10);
-    if (day >= 1 && day <= 28) {
-      await updateProfile({ budgetCycleStartDay: day });
-    }
   };
 
   const handleExportBackup = async () => {
@@ -100,6 +84,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
     }
   };
 
+  const bankAccount = accounts.find(a => a.id === 'acc_bank') || accounts[0];
+  const cashAccount = accounts.find(a => a.id === 'acc_cash') || accounts[1];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in">
       <div className="w-full max-w-md theme-card rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -127,7 +114,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
             <div>
               <span className="text-xs font-bold text-[var(--card-text-main)] block">Theme Appearance</span>
               <span className="text-[11px] text-[var(--card-text-sub)] block">
-                {theme === 'dark' ? 'Dark Mode (Black Bg + Offwhite Elements)' : 'Light Mode (Offwhite Bg + Black Elements)'}
+                {theme === 'dark' ? 'Dark Mode (Black Bg + Offwhite Cards)' : 'Light Mode (Offwhite Bg + Dark Cards)'}
               </span>
             </div>
           </div>
@@ -140,28 +127,32 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
           </button>
         </div>
 
-        {/* 2. Budget Cycle Start Day Setting */}
+        {/* 2. Physical Money Locations Display */}
         <div className="p-4 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Calendar className="w-4 h-4 text-indigo-500" />
-              <span className="text-xs font-bold text-[var(--card-text-main)]">Budget Cycle Starts On</span>
-            </div>
-            <select
-              value={currentUser.budgetCycleStartDay || 5}
-              onChange={e => handleUpdateCycleStartDay(e.target.value)}
-              className="bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-xs font-bold px-3 py-1.5 rounded-xl text-[var(--card-text-main)] font-mono focus:outline-none focus:border-indigo-500"
-            >
-              {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
-                <option key={day} value={day} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900">
-                  {day}th of month
-                </option>
-              ))}
-            </select>
-          </div>
-          <span className="text-[10px] text-[var(--card-text-dim)] block leading-relaxed font-mono">
-            Example: 5th means your monthly budget runs from 5th of this month to 4th of next month (e.g. Sep 5 → Oct 4).
+          <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] font-mono block">
+            YOUR TWO MONEY LOCATIONS
           </span>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="p-3 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] rounded-xl">
+              <div className="flex items-center space-x-1.5 text-[var(--card-text-sub)]">
+                <Landmark className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="text-[11px] font-bold">Bank Account</span>
+              </div>
+              <span className="text-base font-black font-mono-num text-[var(--card-text-main)] mt-0.5 block">
+                {formatINR(bankAccount?.balance || 0)}
+              </span>
+            </div>
+
+            <div className="p-3 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] rounded-xl">
+              <div className="flex items-center space-x-1.5 text-[var(--card-text-sub)]">
+                <Banknote className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="text-[11px] font-bold">Cash in Hand</span>
+              </div>
+              <span className="text-base font-black font-mono-num text-[var(--card-text-main)] mt-0.5 block">
+                {formatINR(cashAccount?.balance || 0)}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* 3. Export & Import Backup */}
@@ -198,28 +189,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
           )}
         </div>
 
-        {/* 4. Active Profile & Accounts */}
-        <div className="space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] px-1 font-mono">
-            PHYSICAL WALLET CASH & ACCOUNTS
-          </span>
-          <div className="grid grid-cols-3 gap-2">
-            {accounts.map(acc => (
-              <div key={acc.id} className="p-3 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl">
-                <span className="text-[10px] text-[var(--card-text-sub)] block truncate font-mono">{acc.name}</span>
-                <span className="text-xs font-bold text-[var(--card-text-main)] font-mono-num mt-0.5 block">
-                  {formatINR(acc.balance)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 5. User Profiles Switcher */}
+        {/* 4. Local User Profiles Switcher */}
         <div className="space-y-2 pt-1 border-t border-[var(--card-divider)]">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] px-1 font-mono">
-              SWITCH PROFILE (ON THIS DEVICE)
+              SWITCH LOCAL PROFILE
             </span>
             <button
               onClick={() => setShowCreateProfile(true)}
@@ -241,7 +215,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                     : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-main)]'
                 }`}
               >
-                <span>{u.name} (Starts {u.budgetCycleStartDay || 5}th)</span>
+                <span>{u.name}</span>
                 {u.id === currentUser.id && <Check className="w-3.5 h-3.5" />}
               </button>
             ))}
@@ -260,18 +234,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                 onChange={e => setNewProfileName(e.target.value)}
                 placeholder="e.g. Rahul, Priya"
                 className="w-full bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-xs px-3 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-[var(--card-text-sub)] block mb-1">Cycle Starts On (Day 1–28)</label>
-              <input
-                type="number"
-                min="1"
-                max="28"
-                value={newProfileStartDay}
-                onChange={e => setNewProfileStartDay(e.target.value)}
-                className="w-full bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-xs px-3 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 font-mono-num"
                 required
               />
             </div>

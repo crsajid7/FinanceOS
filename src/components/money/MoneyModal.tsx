@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
-  TrendingUp,
   RotateCcw,
   HandCoins,
   Check,
   AlertCircle,
-  Sparkles,
+  Landmark,
+  Banknote,
+  ArrowDownLeft,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatINR, validateLoanRepayment } from '../../services/accountingEngine';
+import { MoneyLocationId } from '../../types/finance';
 import confetti from 'canvas-confetti';
 
 interface MoneyModalProps {
@@ -19,7 +21,7 @@ interface MoneyModalProps {
   preselectedType?: 'REIMBURSEMENT' | 'LOAN_REPAYMENT';
 }
 
-type MoneyType = 'BUDGET' | 'REIMBURSEMENT' | 'LOAN_REPAYMENT' | 'REFUND' | 'INCOME';
+type MoneyType = 'RECEIVED' | 'REIMBURSEMENT' | 'LOAN_REPAYMENT' | 'REFUND';
 
 export const MoneyModal: React.FC<MoneyModalProps> = ({
   isOpen,
@@ -29,13 +31,13 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
 }) => {
   const { people, personBalances, addTransaction, accounts } = useFinance();
 
-  const [moneyType, setMoneyType] = useState<MoneyType>('BUDGET');
+  const [moneyType, setMoneyType] = useState<MoneyType>('RECEIVED');
   const [amountStr, setAmountStr] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<MoneyLocationId>('acc_bank');
+  const [source, setSource] = useState<string>('Dad');
   const [personId, setPersonId] = useState<string>('');
   const [personName, setPersonName] = useState<string>('');
-  const [sourcePurpose, setSourcePurpose] = useState<string>('Monthly Allowance');
   const [note, setNote] = useState<string>('');
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -45,16 +47,15 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
       setAmountStr('');
       setNote('');
       setErrorMsg('');
-      if (accounts.length > 0) {
-        setSelectedAccountId(accounts[0].id);
-      }
+      setSelectedAccountId('acc_bank');
+      setSource('Dad');
 
       if (preselectedType === 'REIMBURSEMENT') {
         setMoneyType('REIMBURSEMENT');
       } else if (preselectedType === 'LOAN_REPAYMENT') {
         setMoneyType('LOAN_REPAYMENT');
       } else {
-        setMoneyType('BUDGET');
+        setMoneyType('RECEIVED');
       }
 
       if (preselectedPersonId) {
@@ -70,7 +71,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
         amountInputRef.current?.focus();
       }, 50);
     }
-  }, [isOpen, preselectedPersonId, preselectedType, people, accounts]);
+  }, [isOpen, preselectedPersonId, preselectedType, people]);
 
   if (!isOpen) return null;
 
@@ -103,14 +104,13 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
     }
 
     try {
-      if (moneyType === 'BUDGET') {
+      if (moneyType === 'RECEIVED') {
         await addTransaction({
           type: 'MONEY_RECEIVED',
           amount: numericAmount,
           category: 'Other',
-          personName: personName.trim() || undefined,
-          note: note.trim() || sourcePurpose || 'Monthly Budget Addition',
-          isMonthlyBudget: true,
+          source: source || 'Other',
+          note: note.trim() || `Received from ${source || 'Income'}`,
           accountId: selectedAccountId,
         });
       } else if (moneyType === 'REIMBURSEMENT') {
@@ -161,16 +161,6 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
           note: note.trim() || 'Refund received',
           accountId: selectedAccountId,
         });
-      } else {
-        await addTransaction({
-          type: 'MONEY_RECEIVED',
-          amount: numericAmount,
-          category: 'Other',
-          personName: personName.trim() || undefined,
-          note: note.trim() || sourcePurpose || 'Income',
-          isMonthlyBudget: false,
-          accountId: selectedAccountId,
-        });
       }
 
       try {
@@ -200,11 +190,10 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <h2 className="text-base font-black text-[var(--card-text-main)] tracking-tight">
-              {moneyType === 'BUDGET' && 'Add Monthly Budget / Allowance'}
-              {moneyType === 'REIMBURSEMENT' && 'Receive Friend Reimbursement'}
-              {moneyType === 'LOAN_REPAYMENT' && 'Receive Loan Repayment'}
-              {moneyType === 'REFUND' && 'Record Refund'}
-              {moneyType === 'INCOME' && 'Record Other Money In'}
+              {moneyType === 'RECEIVED' && 'Money Received'}
+              {moneyType === 'REIMBURSEMENT' && 'Friend Reimbursement'}
+              {moneyType === 'LOAN_REPAYMENT' && 'Loan Repaid to You'}
+              {moneyType === 'REFUND' && 'Merchant Refund'}
             </h2>
           </div>
 
@@ -220,14 +209,14 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
         <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2 overflow-x-auto no-scrollbar">
           <button
             type="button"
-            onClick={() => setMoneyType('BUDGET')}
+            onClick={() => setMoneyType('RECEIVED')}
             className={`px-3.5 py-2 text-xs font-black rounded-t-xl whitespace-nowrap transition-all ${
-              moneyType === 'BUDGET'
+              moneyType === 'RECEIVED'
                 ? 'bg-black/10 dark:bg-black/10 text-emerald-500 border-t-2 border-emerald-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
             }`}
           >
-            Monthly Budget
+            Money Received
           </button>
           <button
             type="button"
@@ -265,7 +254,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
           
           {/* Large Amount Input */}
           <div className="text-center py-2">
@@ -288,19 +277,53 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
             </div>
           </div>
 
-          {/* BUDGET FLOW */}
-          {moneyType === 'BUDGET' && (
+          {/* Where Did You Receive This Money? (Strictly Bank Account or Cash in Hand) */}
+          <div>
+            <label className="text-xs font-bold text-[var(--card-text-sub)] uppercase tracking-wider block mb-2 font-mono">
+              WHERE DID YOU RECEIVE THIS MONEY?
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedAccountId('acc_bank')}
+                className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center space-x-2 transition-all shadow-sm ${
+                  selectedAccountId === 'acc_bank'
+                    ? 'bg-indigo-600 text-white border-transparent'
+                    : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+                }`}
+              >
+                <Landmark className="w-4 h-4" />
+                <span>Bank Account</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedAccountId('acc_cash')}
+                className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center space-x-2 transition-all shadow-sm ${
+                  selectedAccountId === 'acc_cash'
+                    ? 'bg-emerald-600 text-white border-transparent'
+                    : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+                }`}
+              >
+                <Banknote className="w-4 h-4" />
+                <span>Cash in Hand</span>
+              </button>
+            </div>
+          </div>
+
+          {/* RECEIVED FLOW: Source */}
+          {moneyType === 'RECEIVED' && (
             <div className="space-y-3 bg-black/5 dark:bg-black/5 p-3.5 rounded-2xl border border-[var(--card-divider)]">
               <div>
-                <label className="text-xs font-bold text-[var(--card-text-sub)] block mb-1 font-mono">SOURCE / FROM (OPTIONAL)</label>
+                <label className="text-xs font-bold text-[var(--card-text-sub)] block mb-1 font-mono">SOURCE / SENDER</label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  {['Dad', 'Mom', 'Parents', 'Salary', 'Savings', 'Other'].map(src => (
+                  {['Dad', 'Mom', 'Parents', 'Salary', 'Scholarship', 'Other'].map(src => (
                     <button
                       key={src}
                       type="button"
-                      onClick={() => setPersonName(src)}
+                      onClick={() => setSource(src)}
                       className={`px-3 py-1 rounded-xl text-xs font-bold border transition-colors shadow-sm ${
-                        personName === src
+                        source === src
                           ? 'bg-emerald-600 text-white border-emerald-500'
                           : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
                       }`}
@@ -309,17 +332,6 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
                     </button>
                   ))}
                 </div>
-                <input
-                  type="text"
-                  value={personName}
-                  onChange={e => setPersonName(e.target.value)}
-                  placeholder="e.g. Dad, Scholarship, etc."
-                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-emerald-500 shadow-sm"
-                />
-              </div>
-
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-500 leading-relaxed">
-                ✨ Designating this as your <strong>Monthly Budget</strong> sets your available spending limit for this month.
               </div>
             </div>
           )}
@@ -345,7 +357,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
                         className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs transition-colors shadow-sm ${
                           personId === p.personId
                             ? 'bg-emerald-600 text-white border-emerald-500'
-                            : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)] hover:border-black/20'
+                            : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
                         }`}
                       >
                         <span className="font-bold">{p.personName}</span>
@@ -371,7 +383,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
               </div>
 
               <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-[11px] text-indigo-500 leading-relaxed">
-                💡 <strong>Important:</strong> Reimbursements settle receivables and replenish cash. They do <strong>NOT</strong> count as new income or alter your monthly spending budget.
+                💡 <strong>Important:</strong> Reimbursements settle receivables and restore cash. They do <strong>NOT</strong> count as new income.
               </div>
             </div>
           )}
@@ -423,7 +435,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
               </div>
 
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-500 leading-relaxed">
-                💡 <strong>Important:</strong> Repaying a loan restores your cash balance and reduces the loan receivable. It does <strong>NOT</strong> inflate your monthly budget. Partial repayments are supported.
+                💡 <strong>Important:</strong> Repaying a loan restores cash and reduces outstanding loans. It does <strong>NOT</strong> count as new income.
               </div>
             </div>
           )}
@@ -436,7 +448,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
                 type="text"
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                placeholder="What was refunded? (e.g. Cancelled train ticket, Swiggy refund)"
+                placeholder="What was refunded? (e.g. Swiggy refund, cancelled auto/bus ticket)"
                 className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-emerald-500 shadow-sm"
               />
             </div>
@@ -469,11 +481,10 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({
             >
               <Check className="w-4 h-4" />
               <span>
-                {moneyType === 'BUDGET' && 'Set Monthly Budget'}
+                {moneyType === 'RECEIVED' && 'Add Money'}
                 {moneyType === 'REIMBURSEMENT' && 'Save Reimbursement'}
                 {moneyType === 'LOAN_REPAYMENT' && 'Save Loan Repayment'}
-                {moneyType === 'REFUND' && 'Record Refund'}
-                {moneyType === 'INCOME' && 'Save Money Received'}
+                {moneyType === 'REFUND' && 'Save Refund'}
               </span>
             </button>
           </div>

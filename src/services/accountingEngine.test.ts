@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  calculateBudgetCycleSummary,
+  calculateFinancialOverview,
   calculateAllPersonBalances,
   computeAccountBalancesFromLedger,
-  getBudgetCycleRange,
+  checkSufficientBalance,
   formatLocalDate,
   parseLocalDate,
   validateSplit,
@@ -12,595 +12,446 @@ import {
 } from './accountingEngine';
 import {
   Transaction,
-  MonthlyBudget,
   Account,
   ReservedMoney,
   Person,
-  ExportDataPayload,
 } from '../types/finance';
 
-describe('FinanceOS 15-Point Accounting Engine Suite', () => {
-  const cycle = getBudgetCycleRange('2026-09-10', 5); // Sep 5 → Oct 4
-  const defaultAccounts: Account[] = [
-    { id: 'bank', userId: 'user_1', name: 'Bank', type: 'BANK', balance: 0 },
-    { id: 'cash', userId: 'user_1', name: 'Cash', type: 'CASH', balance: 0 },
+describe('FinanceOS Pure Student Money Accounting Engine', () => {
+  const baseAccounts: Account[] = [
+    { id: 'acc_bank', userId: 'user_1', name: 'Bank Account', type: 'BANK', balance: 0 },
+    { id: 'acc_cash', userId: 'user_1', name: 'Cash in Hand', type: 'CASH', balance: 0 },
   ];
 
-  // TEST 1: Receive ₹10,000. Spend ₹50. Expected remaining = ₹9,950.
-  it('TEST 1: Receive ₹10,000. Spend ₹50. Remaining = ₹9,950', () => {
+  // TEST 1 — RECEIVE ₹3,200 INTO BANK
+  it('TEST 1: Receive ₹3,200 into Bank -> Current Money = ₹3,200 (NEVER ₹6,400)', () => {
     const transactions: Transaction[] = [
       {
         id: '1',
         userId: 'user_1',
         type: 'MONEY_RECEIVED',
-        amount: 10000,
+        amount: 3200,
         category: 'Other',
-        isMonthlyBudget: true,
+        source: 'Dad',
         date: '2026-09-05',
         time: '10:00',
-        accountId: 'bank',
+        accountId: 'acc_bank',
         status: 'ACTIVE',
         createdAt: 1,
         updatedAt: 1,
       },
-      {
-        id: '2',
-        userId: 'user_1',
-        type: 'EXPENSE',
-        amount: 50,
-        category: 'Food',
-        date: '2026-09-06',
-        time: '12:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
     ];
 
-    const summary = calculateBudgetCycleSummary(cycle, transactions, null, [], defaultAccounts);
-    expect(summary.totalBudget).toBe(10000);
-    expect(summary.actualPersonalSpent).toBe(50);
-    expect(summary.spendableMoney).toBe(9950);
-    expect(summary.leftToSpend).toBe(9950);
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-05'));
+    expect(overview.bankBalance).toBe(3200);
+    expect(overview.cashBalance).toBe(0);
+    expect(overview.currentMoney).toBe(3200);
+    expect(overview.totalReceivedInPeriod).toBe(3200);
+    expect(overview.actualPersonalSpentInPeriod).toBe(0);
+    expect(overview.totalReserved).toBe(0);
+    expect(overview.spendableMoney).toBe(3200);
   });
 
-  // TEST 2: Receive ₹10,000. Spend ₹200 split. User share = ₹100. Expected personal spending = ₹100. Expected receivable = ₹100.
-  it('TEST 2: Friend Split: Personal spending = user share, receivable = others share', () => {
+  // TEST 2 — RECEIVE ANOTHER ₹2,000
+  it('TEST 2: Receive another ₹2,000 into Bank -> Bank = ₹5,200, Current Money = ₹5,200', () => {
     const transactions: Transaction[] = [
       {
         id: '1',
         userId: 'user_1',
         type: 'MONEY_RECEIVED',
-        amount: 10000,
-        category: 'Other',
-        isMonthlyBudget: true,
-        date: '2026-09-05',
-        time: '10:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: '2',
-        userId: 'user_1',
-        type: 'SPLIT',
-        amount: 200,
-        userShare: 100,
-        category: 'Food',
-        date: '2026-09-06',
-        time: '13:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        splits: [{ personId: 'karthick', personName: 'Karthick', amount: 100, settledAmount: 0, isSettled: false }],
-        createdAt: 2,
-        updatedAt: 2,
-      },
-    ];
-
-    const summary = calculateBudgetCycleSummary(cycle, transactions, null, [], defaultAccounts);
-    expect(summary.actualPersonalSpent).toBe(100);
-    expect(summary.spendableMoney).toBe(9900);
-    expect(summary.totalPaidForOthers).toBe(100);
-    expect(summary.pendingSplitReceivables).toBe(100);
-  });
-
-  // TEST 3: Friend repays ₹100. Expected receivable = ₹0.
-  it('TEST 3: Friend reimbursement settles receivable to ₹0 without inflating income', () => {
-    const transactions: Transaction[] = [
-      {
-        id: '1',
-        userId: 'user_1',
-        type: 'SPLIT',
-        amount: 200,
-        userShare: 100,
-        category: 'Food',
-        date: '2026-09-06',
-        time: '13:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        splits: [{ personId: 'karthick', personName: 'Karthick', amount: 100, settledAmount: 0, isSettled: false }],
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: '2',
-        userId: 'user_1',
-        type: 'REIMBURSEMENT',
-        amount: 100,
-        category: 'Other',
-        date: '2026-09-07',
-        time: '10:00',
-        personId: 'karthick',
-        personName: 'Karthick',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
-    ];
-
-    const personList: Person[] = [{ id: 'karthick', userId: 'user_1', name: 'Karthick', createdAt: 1, updatedAt: 1 }];
-    const personBalances = calculateAllPersonBalances(transactions, personList);
-    const karthickBal = personBalances.find(p => p.personId === 'karthick');
-    expect(karthickBal?.splitOwed).toBe(0);
-    expect(karthickBal?.totalOwed).toBe(0);
-  });
-
-  // TEST 4: Lend ₹500. Expected personal spending unchanged. Expected loan outstanding = ₹500.
-  it('TEST 4: Lending ₹500 keeps personal spending unchanged, increases loan receivable', () => {
-    const transactions: Transaction[] = [
-      {
-        id: '1',
-        userId: 'user_1',
-        type: 'LENDING',
-        amount: 500,
-        category: 'Other',
-        date: '2026-09-07',
-        time: '15:00',
-        personId: 'karthick',
-        personName: 'Karthick',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    ];
-
-    const summary = calculateBudgetCycleSummary(cycle, transactions, null, [], defaultAccounts);
-    expect(summary.actualPersonalSpent).toBe(0);
-    expect(summary.totalMoneyLent).toBe(500);
-    expect(summary.pendingLoanReceivables).toBe(500);
-  });
-
-  // TEST 5: Friend repays ₹200. Expected loan outstanding = ₹300.
-  it('TEST 5: Partial loan repayment of ₹200 leaves ₹300 outstanding', () => {
-    const transactions: Transaction[] = [
-      {
-        id: '1',
-        userId: 'user_1',
-        type: 'LENDING',
-        amount: 500,
-        category: 'Other',
-        date: '2026-09-07',
-        time: '15:00',
-        personId: 'karthick',
-        personName: 'Karthick',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: '2',
-        userId: 'user_1',
-        type: 'LOAN_REPAYMENT',
-        amount: 200,
-        category: 'Other',
-        date: '2026-09-08',
-        time: '11:00',
-        personId: 'karthick',
-        personName: 'Karthick',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
-    ];
-
-    const personList: Person[] = [{ id: 'karthick', userId: 'user_1', name: 'Karthick', createdAt: 1, updatedAt: 1 }];
-    const personBalances = calculateAllPersonBalances(transactions, personList);
-    const karthickBal = personBalances.find(p => p.personId === 'karthick');
-    expect(karthickBal?.loanOwed).toBe(300);
-    expect(karthickBal?.totalOwed).toBe(300);
-  });
-
-  // TEST 6: Delete ₹200 expense. Expected balance restored.
-  it('TEST 6: Deleting ₹200 expense restores ledger balance to ₹1,000', () => {
-    const initialTx: Transaction[] = [
-      {
-        id: '1',
-        userId: 'user_1',
-        type: 'MONEY_RECEIVED',
-        amount: 1000,
+        amount: 3200,
         category: 'Other',
         date: '2026-09-05',
         time: '10:00',
-        accountId: 'bank',
+        accountId: 'acc_bank',
         status: 'ACTIVE',
         createdAt: 1,
         updatedAt: 1,
       },
       {
         id: '2',
-        userId: 'user_1',
-        type: 'EXPENSE',
-        amount: 200,
-        category: 'Food',
-        date: '2026-09-06',
-        time: '12:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
-    ];
-
-    // Ledger before delete
-    let accounts = computeAccountBalancesFromLedger(initialTx, defaultAccounts);
-    expect(accounts.find(a => a.id === 'bank')?.balance).toBe(800);
-
-    // Delete transaction id '2'
-    const afterDeleteTx = initialTx.filter(t => t.id !== '2');
-    accounts = computeAccountBalancesFromLedger(afterDeleteTx, defaultAccounts);
-    expect(accounts.find(a => a.id === 'bank')?.balance).toBe(1000);
-  });
-
-  // TEST 7: Edit ₹500 expense to ₹50. Expected accounting reflects ₹50, NOT ₹500.
-  it('TEST 7: Editing ₹500 expense to ₹50 accurately reflects ₹50 in spend and balance', () => {
-    const initialTx: Transaction[] = [
-      {
-        id: '1',
-        userId: 'user_1',
-        type: 'MONEY_RECEIVED',
-        amount: 1000,
-        category: 'Other',
-        isMonthlyBudget: true,
-        date: '2026-09-05',
-        time: '10:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: '2',
-        userId: 'user_1',
-        type: 'EXPENSE',
-        amount: 500,
-        category: 'Food',
-        date: '2026-09-06',
-        time: '12:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
-    ];
-
-    // Edit tx '2' to amount 50
-    const editedTx = initialTx.map(t => (t.id === '2' ? { ...t, amount: 50 } : t));
-
-    const summary = calculateBudgetCycleSummary(cycle, editedTx, null, [], defaultAccounts);
-    expect(summary.actualPersonalSpent).toBe(50);
-    expect(summary.spendableMoney).toBe(950);
-
-    const accounts = computeAccountBalancesFromLedger(editedTx, defaultAccounts);
-    expect(accounts.find(a => a.id === 'bank')?.balance).toBe(950);
-  });
-
-  // TEST 8: Edit split amounts. Expected personal share and receivable both update.
-  it('TEST 8: Editing split shares updates personal spending and receivables cleanly', () => {
-    const initialTx: Transaction[] = [
-      {
-        id: 'split_1',
-        userId: 'user_1',
-        type: 'SPLIT',
-        amount: 300,
-        userShare: 100,
-        category: 'Food',
-        date: '2026-09-06',
-        time: '12:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        splits: [
-          { personId: 'karthick', personName: 'Karthick', amount: 100, settledAmount: 0, isSettled: false },
-          { personId: 'hemanth', personName: 'Hemanth', amount: 100, settledAmount: 0, isSettled: false },
-        ],
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    ];
-
-    // Edit: User share becomes 150, Karthick 150, Hemanth removed
-    const editedTx: Transaction[] = [
-      {
-        ...initialTx[0],
-        userShare: 150,
-        splits: [{ personId: 'karthick', personName: 'Karthick', amount: 150, settledAmount: 0, isSettled: false }],
-      },
-    ];
-
-    const people: Person[] = [
-      { id: 'karthick', userId: 'user_1', name: 'Karthick', createdAt: 1, updatedAt: 1 },
-      { id: 'hemanth', userId: 'user_1', name: 'Hemanth', createdAt: 1, updatedAt: 1 },
-    ];
-
-    const personBalances = calculateAllPersonBalances(editedTx, people);
-    expect(personBalances.find(p => p.personId === 'karthick')?.splitOwed).toBe(150);
-    expect(personBalances.find(p => p.personId === 'hemanth')?.splitOwed).toBe(0);
-  });
-
-  // TEST 9: Delete repayment. Expected outstanding balance restored.
-  it('TEST 9: Deleting loan repayment restores original loan balance', () => {
-    const initialTx: Transaction[] = [
-      {
-        id: 'loan_1',
-        userId: 'user_1',
-        type: 'LENDING',
-        amount: 500,
-        category: 'Other',
-        date: '2026-09-07',
-        time: '10:00',
-        personId: 'karthick',
-        personName: 'Karthick',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: 'repay_1',
-        userId: 'user_1',
-        type: 'LOAN_REPAYMENT',
-        amount: 200,
-        category: 'Other',
-        date: '2026-09-08',
-        time: '10:00',
-        personId: 'karthick',
-        personName: 'Karthick',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
-    ];
-
-    const people: Person[] = [{ id: 'karthick', userId: 'user_1', name: 'Karthick', createdAt: 1, updatedAt: 1 }];
-
-    // Before delete
-    let personBalances = calculateAllPersonBalances(initialTx, people);
-    expect(personBalances.find(p => p.personId === 'karthick')?.loanOwed).toBe(300);
-
-    // Delete repay_1
-    const afterDelete = initialTx.filter(t => t.id !== 'repay_1');
-    personBalances = calculateAllPersonBalances(afterDelete, people);
-    expect(personBalances.find(p => p.personId === 'karthick')?.loanOwed).toBe(500);
-  });
-
-  // TEST 10: Transfer ₹500 between own accounts. Expected total money unchanged. Expected personal spending unchanged.
-  it('TEST 10: Transfers move money without altering personal spend or total cash', () => {
-    const transactions: Transaction[] = [
-      {
-        id: 'in_1',
         userId: 'user_1',
         type: 'MONEY_RECEIVED',
         amount: 2000,
         category: 'Other',
-        date: '2026-09-05',
-        time: '10:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: 'transfer_1',
-        userId: 'user_1',
-        type: 'TRANSFER',
-        amount: 500,
-        category: 'Other',
         date: '2026-09-06',
         time: '11:00',
-        accountId: 'bank',
-        toAccountId: 'cash',
+        accountId: 'acc_bank',
         status: 'ACTIVE',
         createdAt: 2,
         updatedAt: 2,
       },
     ];
 
-    const accounts = computeAccountBalancesFromLedger(transactions, defaultAccounts);
-    expect(accounts.find(a => a.id === 'bank')?.balance).toBe(1500);
-    expect(accounts.find(a => a.id === 'cash')?.balance).toBe(500);
-
-    const totalCash = accounts.reduce((sum, a) => sum + a.balance, 0);
-    expect(totalCash).toBe(2000);
-
-    const summary = calculateBudgetCycleSummary(cycle, transactions, null, [], accounts);
-    expect(summary.actualPersonalSpent).toBe(0);
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-06'));
+    expect(overview.bankBalance).toBe(5200);
+    expect(overview.cashBalance).toBe(0);
+    expect(overview.currentMoney).toBe(5200);
+    expect(overview.totalReceivedInPeriod).toBe(5200);
+    expect(overview.spendableMoney).toBe(5200);
   });
 
-  // TEST 11: ₹6,000 received. ₹5,000 reserved. Expected spendable = ₹1,000.
-  it('TEST 11: Reserved money separates committed funds from spendable cash', () => {
+  // TEST 3 — RECEIVE ₹1,000 CASH
+  it('TEST 3: Receive ₹1,000 Cash -> Bank = ₹5,200, Cash = ₹1,000, Current Money = ₹6,200', () => {
     const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 2000, category: 'Other', date: '2026-09-06', time: '11:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 1000, category: 'Other', date: '2026-09-07', time: '12:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
+    ];
+
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-07'));
+    expect(overview.bankBalance).toBe(5200);
+    expect(overview.cashBalance).toBe(1000);
+    expect(overview.currentMoney).toBe(6200);
+  });
+
+  // TEST 4 — SPEND ₹300 CASH
+  it('TEST 4: Spend ₹300 Cash -> Cash = ₹700, Current Money = ₹5,900, Personal Spending = ₹300', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 5200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 1000, category: 'Other', date: '2026-09-06', time: '11:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'EXPENSE', amount: 300, category: 'Food', date: '2026-09-07', time: '13:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
+    ];
+
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-07'));
+    expect(overview.bankBalance).toBe(5200);
+    expect(overview.cashBalance).toBe(700);
+    expect(overview.currentMoney).toBe(5900);
+    expect(overview.actualPersonalSpentInPeriod).toBe(300);
+    expect(overview.spendableMoney).toBe(5900);
+  });
+
+  // TEST 5 — SPEND ₹500 BANK
+  it('TEST 5: Spend ₹500 Bank -> Bank = ₹4,700, Cash = ₹700, Current Money = ₹5,400, Personal Spending = ₹800', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 5200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 1000, category: 'Other', date: '2026-09-06', time: '11:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'EXPENSE', amount: 300, category: 'Food', date: '2026-09-07', time: '13:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
+      { id: '4', userId: 'user_1', type: 'EXPENSE', amount: 500, category: 'Transport', date: '2026-09-08', time: '14:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 4, updatedAt: 4 },
+    ];
+
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-08'));
+    expect(overview.bankBalance).toBe(4700);
+    expect(overview.cashBalance).toBe(700);
+    expect(overview.currentMoney).toBe(5400);
+    expect(overview.actualPersonalSpentInPeriod).toBe(800);
+  });
+
+  // TEST 6 — FRIEND SPLIT
+  it('TEST 6: Friend Split -> Bank -= ₹200, Personal Spending += ₹100, Friend owes ₹100 (Receivable NOT in cash)', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
       {
-        id: 'in_1',
+        id: '2',
         userId: 'user_1',
-        type: 'MONEY_RECEIVED',
-        amount: 6000,
-        category: 'Other',
-        isMonthlyBudget: true,
-        date: '2026-09-05',
-        time: '10:00',
-        accountId: 'bank',
+        type: 'SPLIT',
+        amount: 200,
+        userShare: 100,
+        category: 'Food',
+        date: '2026-09-06',
+        time: '13:00',
+        accountId: 'acc_bank',
         status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
+        splits: [{ personId: 'karthick', personName: 'Karthick', amount: 100, settledAmount: 0, isSettled: false }],
+        createdAt: 2,
+        updatedAt: 2,
       },
+    ];
+
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-06'));
+    expect(overview.bankBalance).toBe(3000);
+    expect(overview.currentMoney).toBe(3000);
+    expect(overview.actualPersonalSpentInPeriod).toBe(100);
+    expect(overview.pendingSplitReceivables).toBe(100);
+    expect(overview.totalMoneyOwedToYou).toBe(100);
+    // Current money must NOT include the ₹100 receivable!
+    expect(overview.currentMoney).not.toBe(3100);
+  });
+
+  // TEST 7 — LEND ₹500
+  it('TEST 7: Lend ₹500 -> Cash -= ₹500, Personal Spending unchanged, Loan outstanding = ₹500', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 1000, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      {
+        id: '2',
+        userId: 'user_1',
+        type: 'LENDING',
+        amount: 500,
+        category: 'Other',
+        personId: 'karthick',
+        personName: 'Karthick',
+        date: '2026-09-06',
+        time: '14:00',
+        accountId: 'acc_cash',
+        status: 'ACTIVE',
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-06'));
+    expect(overview.cashBalance).toBe(500);
+    expect(overview.currentMoney).toBe(500);
+    expect(overview.actualPersonalSpentInPeriod).toBe(0);
+    expect(overview.pendingLoanReceivables).toBe(500);
+    expect(overview.totalMoneyOwedToYou).toBe(500);
+  });
+
+  // TEST 8 — LOAN REPAYMENT ₹200
+  it('TEST 8: Loan Repayment ₹200 -> Cash += ₹200, Loan outstanding = ₹300, 0 new spending/income', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 1000, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'LENDING', amount: 500, category: 'Other', personId: 'karthick', personName: 'Karthick', date: '2026-09-06', time: '14:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'LOAN_REPAYMENT', amount: 200, category: 'Other', personId: 'karthick', personName: 'Karthick', date: '2026-09-07', time: '15:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
+    ];
+
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-07'));
+    expect(overview.cashBalance).toBe(700);
+    expect(overview.currentMoney).toBe(700);
+    expect(overview.pendingLoanReceivables).toBe(300);
+    expect(overview.totalMoneyOwedToYou).toBe(300);
+    expect(overview.actualPersonalSpentInPeriod).toBe(0);
+  });
+
+  // TEST 9 — RESERVE ₹2,000
+  it('TEST 9: Reserve ₹2,000 -> Current Money = ₹6,400, Reserved = ₹2,000, Spendable = ₹4,400', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 6400, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
     ];
 
     const reservations: ReservedMoney[] = [
-      {
-        id: 'res_1',
-        userId: 'user_1',
-        amount: 5000,
-        purpose: 'PG Rent',
-        isFulfilled: false,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      { id: 'r1', userId: 'user_1', amount: 2000, purpose: 'Rent', isFulfilled: false, createdAt: 1, updatedAt: 1 },
     ];
 
-    const summary = calculateBudgetCycleSummary(cycle, transactions, null, reservations, defaultAccounts);
-    expect(summary.totalBudget).toBe(6000);
-    expect(summary.totalReserved).toBe(5000);
-    expect(summary.actualPersonalSpent).toBe(0);
-    expect(summary.spendableMoney).toBe(1000);
-    expect(summary.leftToSpend).toBe(1000);
+    const overview = calculateFinancialOverview(transactions, reservations, 'THIS_MONTH', new Date('2026-09-05'));
+    expect(overview.currentMoney).toBe(6400);
+    expect(overview.totalReserved).toBe(2000);
+    expect(overview.spendableMoney).toBe(4400);
+    expect(overview.bankBalance).toBe(6400); // Physical balance unchanged
   });
 
-  // TEST 12: Budget cycle Sep 5 → Oct 4. Transaction Sep 4 belongs to previous cycle. Transaction Sep 5 belongs to current cycle.
-  it('TEST 12: Budget cycle boundaries strictly partition transactions', () => {
-    const cycleRange = getBudgetCycleRange('2026-09-10', 5); // Sep 5 → Oct 4
-    expect(cycleRange.startDate).toBe('2026-09-05');
-    expect(cycleRange.endDate).toBe('2026-10-04');
-
+  // TEST 10 — TRANSFER BANK → CASH
+  it('TEST 10: Transfer Bank -> Cash ₹1,000: Total Money unchanged, no spending, no income', () => {
     const transactions: Transaction[] = [
-      {
-        id: 'tx_old',
-        userId: 'user_1',
-        type: 'EXPENSE',
-        amount: 100,
-        category: 'Food',
-        date: '2026-09-04', // Before cycle start!
-        time: '23:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: 'tx_current',
-        userId: 'user_1',
-        type: 'EXPENSE',
-        amount: 200,
-        category: 'Food',
-        date: '2026-09-05', // On cycle start!
-        time: '01:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 5000, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 500, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'TRANSFER', amount: 1000, category: 'Other', date: '2026-09-06', time: '11:00', accountId: 'acc_bank', toAccountId: 'acc_cash', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
     ];
 
-    const summary = calculateBudgetCycleSummary(cycleRange, transactions, null, [], defaultAccounts);
-    expect(summary.actualPersonalSpent).toBe(200); // Only Sep 5 included!
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-06'));
+    expect(overview.bankBalance).toBe(4000);
+    expect(overview.cashBalance).toBe(1500);
+    expect(overview.currentMoney).toBe(5500);
+    expect(overview.actualPersonalSpentInPeriod).toBe(0);
   });
 
-  // TEST 13: Transaction around midnight. Verify local date is correct.
-  it('TEST 13: Local date helper prevents midnight UTC shifts', () => {
-    const midnightLocal = new Date(2026, 8, 5, 0, 5); // Sep 5, 00:05 local
-    const formatted = formatLocalDate(midnightLocal);
-    expect(formatted).toBe('2026-09-05');
+  // TEST 11 — EDIT EXPENSE
+  it('TEST 11: Edit expense ₹500 -> ₹300: Bank becomes ₹2,900 (NOT ₹2,400)', () => {
+    const initialTx: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'EXPENSE', amount: 500, category: 'Food', date: '2026-09-06', time: '12:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+    ];
+
+    // Replaced in ledger with edited amount ₹300
+    const editedTx = initialTx.map(t => (t.id === '2' ? { ...t, amount: 300 } : t));
+    const accounts = computeAccountBalancesFromLedger(editedTx, baseAccounts);
+    expect(accounts.find(a => a.id === 'acc_bank')?.balance).toBe(2900);
   });
 
-  // TEST 14: ₹5,000 budget. ₹5,500 spending. Expected: ₹500 over budget.
-  it('TEST 14: Overspending reflects negative spendable and over-budget flag', () => {
+  // TEST 12 — DELETE EXPENSE
+  it('TEST 12: Delete ₹500 expense: Bank restores to ₹3,200', () => {
+    const initialTx: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'EXPENSE', amount: 500, category: 'Food', date: '2026-09-06', time: '12:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+    ];
+
+    const afterDelete = initialTx.filter(t => t.id !== '2');
+    const accounts = computeAccountBalancesFromLedger(afterDelete, baseAccounts);
+    expect(accounts.find(a => a.id === 'acc_bank')?.balance).toBe(3200);
+  });
+
+  // TEST 13 — CHANGE ACCOUNT ON EDIT (Bank -> Cash)
+  it('TEST 13: Edit expense account Bank -> Cash: Reverses Bank and applies Cash', () => {
+    const initialTx: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 500, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'EXPENSE', amount: 200, category: 'Food', date: '2026-09-06', time: '12:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
+    ];
+
+    // Edit tx '3' from Bank to Cash
+    const editedTx = initialTx.map(t => (t.id === '3' ? { ...t, accountId: 'acc_cash' } : t));
+    const accounts = computeAccountBalancesFromLedger(editedTx, baseAccounts);
+    expect(accounts.find(a => a.id === 'acc_bank')?.balance).toBe(3200);
+    expect(accounts.find(a => a.id === 'acc_cash')?.balance).toBe(300);
+  });
+
+  // TEST 14 — MULTIPLE RECEIPTS
+  it('TEST 14: Multiple Receipts (₹3,200 Bank + ₹2,000 Bank + ₹1,500 Cash) -> Bank = ₹5,200, Cash = ₹1,500, Total = ₹6,700', () => {
     const transactions: Transaction[] = [
-      {
-        id: 'in_1',
-        userId: 'user_1',
-        type: 'MONEY_RECEIVED',
-        amount: 5000,
-        category: 'Other',
-        isMonthlyBudget: true,
-        date: '2026-09-05',
-        time: '10:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        id: 'exp_1',
-        userId: 'user_1',
-        type: 'EXPENSE',
-        amount: 5500,
-        category: 'Food',
-        date: '2026-09-10',
-        time: '12:00',
-        accountId: 'bank',
-        status: 'ACTIVE',
-        createdAt: 2,
-        updatedAt: 2,
-      },
+      { id: '1', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 2000, category: 'Other', date: '2026-09-12', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: '3', userId: 'user_1', type: 'MONEY_RECEIVED', amount: 1500, category: 'Other', date: '2026-09-20', time: '10:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
     ];
 
-    const summary = calculateBudgetCycleSummary(cycle, transactions, null, [], defaultAccounts);
-    expect(summary.totalBudget).toBe(5000);
-    expect(summary.actualPersonalSpent).toBe(5500);
-    expect(summary.spendableMoney).toBe(-500);
-    expect(summary.isOverBudget).toBe(true);
-    expect(summary.overBudgetAmount).toBe(500);
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-20'));
+    expect(overview.bankBalance).toBe(5200);
+    expect(overview.cashBalance).toBe(1500);
+    expect(overview.currentMoney).toBe(6700);
+    expect(overview.totalReceivedInPeriod).toBe(6700);
   });
 
-  // TEST 15: Export data → clear local data → import data. All financial records return correctly.
-  it('TEST 15: Export and Import roundtrip payload structure is fully preserved', () => {
-    const exportPayload: ExportDataPayload = {
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      user: {
-        id: 'u1',
-        name: 'Sajid',
-        email: 'sajid@financeos.app',
-        currency: '₹',
-        defaultMonthlyBudget: 10000,
-        budgetCycleStartDay: 5,
-        theme: 'light',
-        customCategories: ['Food', 'Groceries'],
-      },
-      accounts: defaultAccounts,
-      transactions: [
-        {
-          id: 'tx_1',
-          userId: 'u1',
-          type: 'EXPENSE',
-          amount: 50,
-          category: 'Food',
-          date: '2026-09-05',
-          time: '12:00',
-          accountId: 'bank',
-          status: 'ACTIVE',
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      people: [{ id: 'p1', userId: 'u1', name: 'Karthick', createdAt: 1, updatedAt: 1 }],
-      budgets: [{ id: 'b1', userId: 'u1', yearMonth: '2026-09', totalBudget: 10000, allocations: {}, createdAt: 1, updatedAt: 1 }],
-      reservedMoney: [{ id: 'r1', userId: 'u1', amount: 5000, purpose: 'PG Rent', isFulfilled: false, createdAt: 1, updatedAt: 1 }],
-    };
+  // TEST 15 — OPENING BALANCE
+  it('TEST 15: Opening Balance sets starting cash without inflating normal received-money period stats', () => {
+    const transactions: Transaction[] = [
+      { id: '1', userId: 'user_1', type: 'OPENING_BALANCE', amount: 3200, category: 'Other', date: '2026-09-01', time: '00:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: '2', userId: 'user_1', type: 'OPENING_BALANCE', amount: 500, category: 'Other', date: '2026-09-01', time: '00:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+    ];
 
-    const json = JSON.stringify(exportPayload);
-    const parsed: ExportDataPayload = JSON.parse(json);
+    const overview = calculateFinancialOverview(transactions, [], 'THIS_MONTH', new Date('2026-09-01'));
+    expect(overview.bankBalance).toBe(3200);
+    expect(overview.cashBalance).toBe(500);
+    expect(overview.currentMoney).toBe(3700);
+    // Opening balance does NOT count as regular period inflow
+    expect(overview.totalReceivedInPeriod).toBe(0);
+  });
 
-    expect(parsed.version).toBe(2);
-    expect(parsed.user.name).toBe('Sajid');
-    expect(parsed.transactions.length).toBe(1);
-    expect(parsed.transactions[0].amount).toBe(50);
-    expect(parsed.reservedMoney.length).toBe(1);
-    expect(parsed.reservedMoney[0].purpose).toBe('PG Rent');
+  // TEST 16 — COMPLETE 10-STEP REAL-WORLD STUDENT SEQUENCE (Section 45)
+  it('TEST 16: Complete 10-step real-world student sequence matches exact expected amounts', () => {
+    let ledger: Transaction[] = [];
+    let reservations: ReservedMoney[] = [];
+
+    // Step 1: Receive ₹3,200 into Bank
+    ledger.push({ id: 's1', userId: 'u1', type: 'MONEY_RECEIVED', amount: 3200, category: 'Other', date: '2026-09-05', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 });
+    let o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-05'));
+    expect(o.bankBalance).toBe(3200);
+    expect(o.cashBalance).toBe(0);
+    expect(o.currentMoney).toBe(3200);
+    expect(o.spendableMoney).toBe(3200);
+
+    // Step 2: Spend ₹100 on food from Bank
+    ledger.push({ id: 's2', userId: 'u1', type: 'EXPENSE', amount: 100, category: 'Food', date: '2026-09-06', time: '12:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 2, updatedAt: 2 });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-06'));
+    expect(o.bankBalance).toBe(3100);
+    expect(o.currentMoney).toBe(3100);
+    expect(o.actualPersonalSpentInPeriod).toBe(100);
+
+    // Step 3: Receive another ₹2,000 into Bank
+    ledger.push({ id: 's3', userId: 'u1', type: 'MONEY_RECEIVED', amount: 2000, category: 'Other', date: '2026-09-07', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 3, updatedAt: 3 });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-07'));
+    expect(o.bankBalance).toBe(5100);
+    expect(o.currentMoney).toBe(5100);
+
+    // Step 4: Receive ₹500 into Cash
+    ledger.push({ id: 's4', userId: 'u1', type: 'MONEY_RECEIVED', amount: 500, category: 'Other', date: '2026-09-08', time: '10:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 4, updatedAt: 4 });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-08'));
+    expect(o.bankBalance).toBe(5100);
+    expect(o.cashBalance).toBe(500);
+    expect(o.currentMoney).toBe(5600);
+
+    // Step 5: Spend ₹200 from Cash
+    ledger.push({ id: 's5', userId: 'u1', type: 'EXPENSE', amount: 200, category: 'Food', date: '2026-09-09', time: '13:00', accountId: 'acc_cash', status: 'ACTIVE', createdAt: 5, updatedAt: 5 });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-09'));
+    expect(o.cashBalance).toBe(300);
+    expect(o.currentMoney).toBe(5400);
+
+    // Step 6: Pay ₹300 for a friend from Bank. My share = ₹150.
+    ledger.push({
+      id: 's6',
+      userId: 'u1',
+      type: 'SPLIT',
+      amount: 300,
+      userShare: 150,
+      category: 'Food',
+      date: '2026-09-10',
+      time: '14:00',
+      accountId: 'acc_bank',
+      status: 'ACTIVE',
+      splits: [{ personId: 'karthick', personName: 'Karthick', amount: 150, settledAmount: 0, isSettled: false }],
+      createdAt: 6,
+      updatedAt: 6,
+    });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-10'));
+    expect(o.bankBalance).toBe(4800);
+    expect(o.actualPersonalSpentInPeriod).toBe(450); // 100 + 200 + 150
+    expect(o.pendingSplitReceivables).toBe(150);
+    expect(o.currentMoney).toBe(5100);
+
+    // Step 7: Lend ₹500 from Bank
+    ledger.push({
+      id: 's7',
+      userId: 'u1',
+      type: 'LENDING',
+      amount: 500,
+      category: 'Other',
+      personId: 'karthick',
+      personName: 'Karthick',
+      date: '2026-09-11',
+      time: '15:00',
+      accountId: 'acc_bank',
+      status: 'ACTIVE',
+      createdAt: 7,
+      updatedAt: 7,
+    });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-11'));
+    expect(o.bankBalance).toBe(4300);
+    expect(o.actualPersonalSpentInPeriod).toBe(450); // unchanged
+    expect(o.pendingLoanReceivables).toBe(500);
+    expect(o.currentMoney).toBe(4600);
+
+    // Step 8: Reserve ₹1,000 for rent
+    reservations.push({ id: 'r1', userId: 'u1', amount: 1000, purpose: 'Rent', isFulfilled: false, createdAt: 8, updatedAt: 8 });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-11'));
+    expect(o.currentMoney).toBe(4600);
+    expect(o.totalReserved).toBe(1000);
+    expect(o.spendableMoney).toBe(3600);
+
+    // Step 9: Friend reimburses ₹150 into Bank
+    ledger.push({
+      id: 's9',
+      userId: 'u1',
+      type: 'REIMBURSEMENT',
+      amount: 150,
+      category: 'Other',
+      personId: 'karthick',
+      personName: 'Karthick',
+      date: '2026-09-12',
+      time: '10:00',
+      accountId: 'acc_bank',
+      status: 'ACTIVE',
+      createdAt: 9,
+      updatedAt: 9,
+    });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-12'));
+    expect(o.bankBalance).toBe(4450);
+    expect(o.pendingSplitReceivables).toBe(0);
+    expect(o.currentMoney).toBe(4750);
+    expect(o.spendableMoney).toBe(3750);
+
+    // Step 10: Friend repays ₹200 of the loan into Cash
+    ledger.push({
+      id: 's10',
+      userId: 'u1',
+      type: 'LOAN_REPAYMENT',
+      amount: 200,
+      category: 'Other',
+      personId: 'karthick',
+      personName: 'Karthick',
+      date: '2026-09-13',
+      time: '11:00',
+      accountId: 'acc_cash',
+      status: 'ACTIVE',
+      createdAt: 10,
+      updatedAt: 10,
+    });
+    o = calculateFinancialOverview(ledger, reservations, 'THIS_MONTH', new Date('2026-09-13'));
+    expect(o.cashBalance).toBe(500);
+    expect(o.pendingLoanReceivables).toBe(300);
+    expect(o.currentMoney).toBe(4950);
+    expect(o.spendableMoney).toBe(3950);
+
+    // Check negative balance prevention function
+    const balanceCheck = checkSufficientBalance('acc_cash', 600, o.bankBalance ? [{ id: 'acc_bank', userId: 'u1', name: 'Bank Account', type: 'BANK', balance: o.bankBalance }, { id: 'acc_cash', userId: 'u1', name: 'Cash in Hand', type: 'CASH', balance: o.cashBalance }] : baseAccounts);
+    expect(balanceCheck.hasSufficient).toBe(false);
+    expect(balanceCheck.missingAmount).toBe(100);
   });
 });

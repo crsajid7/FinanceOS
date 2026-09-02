@@ -3,12 +3,13 @@ import {
   Search,
   Users,
   HandCoins,
-  ArrowDownLeft,
-  ArrowUpRight,
   RotateCcw,
   Clock,
   ArrowRightLeft,
   Scale,
+  Sparkles,
+  Landmark,
+  Banknote,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { Transaction } from '../../types/finance';
@@ -29,7 +30,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       if (filterType === 'EXPENSE' && tx.type !== 'EXPENSE') return false;
       if (filterType === 'SPLIT' && tx.type !== 'SPLIT') return false;
       if (filterType === 'LENDING' && tx.type !== 'LENDING') return false;
-      if (filterType === 'MONEY_IN' && !['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(tx.type)) {
+      if (filterType === 'MONEY_IN' && !['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(tx.type)) {
         return false;
       }
       if (filterType === 'TRANSFER' && tx.type !== 'TRANSFER' && tx.type !== 'ADJUSTMENT') return false;
@@ -78,6 +79,13 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
 
   const renderBadge = (tx: Transaction) => {
     switch (tx.type) {
+      case 'OPENING_BALANCE':
+        return (
+          <span className="text-[11px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md font-mono flex items-center space-x-1">
+            <Sparkles className="w-3 h-3" />
+            <span>Starting Balance</span>
+          </span>
+        );
       case 'EXPENSE':
         return (
           <span className="text-[11px] font-bold text-[var(--card-text-sub)] bg-black/10 dark:bg-black/5 px-2 py-0.5 rounded-md font-mono">
@@ -116,7 +124,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       case 'MONEY_RECEIVED':
         return (
           <span className="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md font-mono">
-            {tx.isMonthlyBudget ? 'Monthly Budget' : 'Money Received'}
+            {tx.source ? `From ${tx.source}` : 'Money Received'}
           </span>
         );
       case 'REFUND':
@@ -129,14 +137,14 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
         return (
           <span className="text-[11px] font-bold text-slate-400 bg-black/10 dark:bg-black/5 border border-[var(--card-divider)] px-2 py-0.5 rounded-md font-mono flex items-center space-x-1">
             <ArrowRightLeft className="w-3 h-3" />
-            <span>Transfer</span>
+            <span>Transfer: {tx.accountId === 'acc_bank' ? 'Bank → Cash' : 'Cash → Bank'}</span>
           </span>
         );
       case 'ADJUSTMENT':
         return (
           <span className="text-[11px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md font-mono flex items-center space-x-1">
             <Scale className="w-3 h-3" />
-            <span>Reconciliation Adjustment</span>
+            <span>Cash Adjustment</span>
           </span>
         );
       default:
@@ -191,8 +199,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       {/* Transaction Feed */}
       {groupedTransactions.length === 0 ? (
         <div className="text-center py-16 px-4 theme-card rounded-3xl shadow-sm">
-          <p className="text-sm font-black text-[var(--card-text-main)]">Nothing spent yet.</p>
-          <p className="text-xs text-[var(--card-text-sub)] mt-1">Record your first transaction and FinanceOS will start tracking where your money goes.</p>
+          <p className="text-sm font-black text-[var(--card-text-main)]">Nothing recorded yet.</p>
+          <p className="text-xs text-[var(--card-text-sub)] mt-1">Record your first entry and FinanceOS will track your money with mathematical accuracy.</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -204,7 +212,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
 
               <div className="theme-card rounded-3xl divide-y divide-[var(--card-divider)] overflow-hidden shadow-sm">
                 {items.map(tx => {
-                  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(tx.type) || (tx.type === 'ADJUSTMENT' && tx.amount > 0);
+                  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(tx.type) || (tx.type === 'ADJUSTMENT' && tx.amount > 0);
                   const isLending = tx.type === 'LENDING';
                   
                   return (
@@ -239,6 +247,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
                           
                           <div className="flex items-center space-x-2 mt-1">
                             {renderBadge(tx)}
+                            <span className="text-[10px] text-[var(--card-text-dim)] font-mono flex items-center space-x-1">
+                              {tx.accountId === 'acc_cash' ? <Banknote className="w-3 h-3 text-emerald-500" /> : <Landmark className="w-3 h-3 text-indigo-500" />}
+                              <span>{tx.accountId === 'acc_cash' ? 'Cash' : 'Bank'}</span>
+                            </span>
                             {tx.time && (
                               <span className="text-[11px] text-[var(--card-text-sub)] flex items-center space-x-0.5 font-mono">
                                 <Clock className="w-3 h-3" />

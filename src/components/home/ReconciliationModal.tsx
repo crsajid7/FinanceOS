@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Scale, Check, AlertTriangle, ArrowRight } from 'lucide-react';
+import { X, Scale, Check, AlertTriangle } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatINR } from '../../services/accountingEngine';
+import { MoneyLocationId } from '../../types/finance';
 
 interface ReconciliationModalProps {
   isOpen: boolean;
@@ -10,15 +11,15 @@ interface ReconciliationModalProps {
 
 export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen, onClose }) => {
   const { accounts, recordCashAdjustment } = useFinance();
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<MoneyLocationId>('acc_bank');
   const [actualCashStr, setActualCashStr] = useState<string>('');
   const [reason, setReason] = useState<string>('Forgot to record an expense');
 
   useEffect(() => {
     if (isOpen && accounts.length > 0) {
-      const defaultAcc = accounts[0];
-      setSelectedAccountId(defaultAcc.id);
-      setActualCashStr(String(defaultAcc.balance));
+      setSelectedAccountId('acc_bank');
+      const bank = accounts.find(a => a.id === 'acc_bank') || accounts[0];
+      setActualCashStr(String(bank.balance));
       setReason('Forgot to record an expense');
     }
   }, [isOpen, accounts]);
@@ -33,7 +34,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentAccount) return;
-    await recordCashAdjustment(actualCash, currentAccount.id, reason);
+    await recordCashAdjustment(actualCash, selectedAccountId, reason);
     onClose();
   };
 
@@ -57,12 +58,13 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="text-[var(--card-text-sub)] block mb-1 font-mono font-bold">SELECT ACCOUNT</label>
+            <label className="text-[var(--card-text-sub)] block mb-1 font-mono font-bold">SELECT LOCATION</label>
             <select
               value={selectedAccountId}
               onChange={e => {
-                setSelectedAccountId(e.target.value);
-                const acc = accounts.find(a => a.id === e.target.value);
+                const targetId = e.target.value as MoneyLocationId;
+                setSelectedAccountId(targetId);
+                const acc = accounts.find(a => a.id === targetId);
                 if (acc) setActualCashStr(String(acc.balance));
               }}
               className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
@@ -130,7 +132,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
               className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl text-xs transition-colors flex items-center justify-center space-x-1.5 shadow-sm"
             >
               <Check className="w-4 h-4" />
-              <span>Record Cash Adjustment ({formatINR(difference)})</span>
+              <span>Record Adjustment ({formatINR(difference)})</span>
             </button>
           </div>
         </form>

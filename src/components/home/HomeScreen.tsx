@@ -1,18 +1,12 @@
 import React, { useState } from 'react';
 import {
-  Sparkles,
-  Users,
-  Calendar,
-  AlertTriangle,
   ArrowRight,
-  ShieldCheck,
-  Zap,
   ArrowUpRight,
   ArrowDownLeft,
-  HandCoins,
-  Plus,
-  Scale,
+  ArrowRightLeft,
   Bookmark,
+  Scale,
+  Sparkles,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
@@ -20,6 +14,8 @@ import { formatINR } from '../../services/accountingEngine';
 import { WalletCard } from '../visual/WalletCard';
 import { ReconciliationModal } from './ReconciliationModal';
 import { ReservedMoneyModal } from './ReservedMoneyModal';
+import { TransferModal } from './TransferModal';
+import { OpeningBalanceModal } from './OpeningBalanceModal';
 
 interface HomeScreenProps {
   onOpenSpent: () => void;
@@ -36,92 +32,85 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigateToPeople,
   onNavigateToHistory,
 }) => {
-  const { summary, transactions, selectedCycle } = useFinance();
+  const { overview, transactions } = useFinance();
   const { currentUser } = useAuth();
 
   const [showReconciliation, setShowReconciliation] = useState<boolean>(false);
   const [showReservedModal, setShowReservedModal] = useState<boolean>(false);
+  const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
+  const [showOpeningModal, setShowOpeningModal] = useState<boolean>(false);
 
   const recentTransactions = transactions.slice(0, 4);
 
   return (
     <div className="space-y-5 pb-28 max-w-2xl mx-auto">
       
-      {/* 1. Header: Greeting & Active Budget Cycle */}
+      {/* 1. Header: Greeting & Quick Starting Balance Setup */}
       <div className="flex items-center justify-between pt-1">
         <div>
           <span className="text-[11px] font-bold text-[var(--page-subtitle)] uppercase tracking-wider block font-mono">
-            FINANCEOS
+            FINANCEOS · STUDENT MONEY DIARY
           </span>
           <h1 className="text-xl font-black tracking-tight text-[var(--page-title)]">
             {currentUser.name}
           </h1>
         </div>
 
-        <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full theme-card text-xs font-mono font-bold">
-          <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-          <span className="text-[var(--card-text-main)]">{selectedCycle.label}</span>
-          <span className="text-[var(--card-text-sub)]">· {selectedCycle.daysRemaining}d left</span>
-        </div>
+        {transactions.length === 0 && (
+          <button
+            onClick={() => setShowOpeningModal(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl theme-card text-xs font-mono font-bold hover:border-indigo-500 transition-colors shadow-sm"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Set Starting Cash</span>
+          </button>
+        )}
       </div>
 
       {/* 2. Primary Spendable Money Hero Card */}
-      <div className={`rounded-3xl p-6 shadow-md space-y-4 ${
-        summary.isOverBudget
-          ? 'bg-rose-950/20 border-2 border-rose-500/50 text-rose-500'
-          : 'theme-card'
-      }`}>
+      <div className="theme-card rounded-3xl p-6 shadow-md space-y-4">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--card-text-sub)] font-mono">
-            {summary.isOverBudget ? 'OVER-BUDGET ALERT' : 'SPENDABLE MONEY / LEFT TO SPEND'}
+            SPENDABLE MONEY
           </span>
-          <span className="text-xs font-mono font-bold text-[var(--card-text-sub)]">
-            ≈ {formatINR(summary.recommendedDailyPace)}/day target
-          </span>
+          <button
+            onClick={onOpenWhereDidMoneyGo}
+            className="text-xs font-bold text-indigo-500 hover:underline flex items-center space-x-1"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Story Report</span>
+          </button>
         </div>
 
         {/* Large Main Number */}
         <div className="py-1">
-          {summary.isOverBudget ? (
-            <div>
-              <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono-num block text-rose-500">
-                {formatINR(summary.overBudgetAmount)} OVER
-              </span>
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-400 mt-1 block">
-                ₹0 left to spend · Exceeded {formatINR(summary.totalBudget)} cycle budget
-              </span>
-            </div>
-          ) : (
-            <div>
-              <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono-num block text-[var(--card-text-main)]">
-                {formatINR(summary.spendableMoney)}
-              </span>
-              <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] mt-1 block font-mono">
-                Left to spend of {formatINR(summary.totalBudget)} total money
-              </span>
-            </div>
-          )}
+          <span className="text-4xl sm:text-5xl font-black tracking-tight font-mono-num block text-[var(--card-text-main)]">
+            {formatINR(overview.spendableMoney)}
+          </span>
+          <span className="text-xs font-bold uppercase tracking-wider text-[var(--card-text-sub)] mt-1 block font-mono">
+            Available right now to spend
+          </span>
         </div>
 
         {/* Breakdown Row */}
         <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[var(--card-divider)] text-center text-xs">
           <div className="bg-black/5 dark:bg-black/5 p-2 rounded-xl border border-[var(--card-divider)]">
-            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">TOTAL IN</span>
-            <span className="font-bold text-[var(--card-text-main)] font-mono-num">{formatINR(summary.totalBudget)}</span>
+            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">TOTAL MONEY</span>
+            <span className="font-bold text-[var(--card-text-main)] font-mono-num">{formatINR(overview.currentMoney)}</span>
           </div>
           <div className="bg-black/5 dark:bg-black/5 p-2 rounded-xl border border-[var(--card-divider)]">
             <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">RESERVED</span>
-            <span className="font-bold text-amber-500 font-mono-num">{formatINR(summary.totalReserved)}</span>
+            <span className="font-bold text-amber-500 font-mono-num">{formatINR(overview.totalReserved)}</span>
           </div>
           <div className="bg-black/5 dark:bg-black/5 p-2 rounded-xl border border-[var(--card-divider)]">
-            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">SPENT</span>
-            <span className="font-bold text-rose-500 font-mono-num">{formatINR(summary.actualPersonalSpent)}</span>
+            <span className="text-[10px] text-[var(--card-text-sub)] block font-mono">SPENDABLE</span>
+            <span className="font-bold text-emerald-500 font-mono-num">{formatINR(overview.spendableMoney)}</span>
           </div>
         </div>
       </div>
 
-      {/* 3. Physical Cash Wallet Card */}
-      <WalletCard />
+      {/* 3. Physical Money Card (Bank Account & Cash in Hand) */}
+      <WalletCard onOpenTransfer={() => setShowTransferModal(true)} />
 
       {/* 4. Quick Action Buttons */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -166,18 +155,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </button>
       </div>
 
-      {/* 5. Personal Spending & Money Owed Grid */}
+      {/* 5. Period Overview Metrics (This Month) */}
       <div className="grid grid-cols-2 gap-3">
         <div className="theme-card rounded-2xl p-4 flex flex-col justify-between shadow-sm">
           <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--card-text-sub)] font-mono">
-            PERSONAL SPENDING
+            PERSONAL SPENT ({overview.periodLabel.toUpperCase()})
           </span>
           <div className="mt-2">
             <span className="text-2xl font-black text-[var(--card-text-main)] font-mono-num block">
-              {formatINR(summary.actualPersonalSpent)}
+              {formatINR(overview.actualPersonalSpentInPeriod)}
             </span>
             <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
-              In {selectedCycle.label}
+              Inflows: {formatINR(overview.totalReceivedInPeriod)}
             </span>
           </div>
         </div>
@@ -194,10 +183,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-amber-500 font-mono-num block">
-              {formatINR(summary.totalMoneyOwedToYou)}
+              {formatINR(overview.totalMoneyOwedToYou)}
             </span>
             <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
-              Splits & loans
+              Splits ({formatINR(overview.pendingSplitReceivables)}) · Loans ({formatINR(overview.pendingLoanReceivables)})
             </span>
           </div>
         </div>
@@ -210,7 +199,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             TODAY'S SPEND
           </span>
           <span className="text-xl font-black text-[var(--card-text-main)] font-mono-num mt-1 block">
-            {formatINR(summary.todaySpent)}
+            {formatINR(overview.todaySpent)}
           </span>
         </div>
 
@@ -219,7 +208,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             LAST 7 DAYS
           </span>
           <span className="text-xl font-black text-[var(--card-text-main)] font-mono-num mt-1 block">
-            {formatINR(summary.thisWeekSpent)}
+            {formatINR(overview.last7DaysSpent)}
           </span>
         </div>
       </div>
@@ -241,12 +230,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {recentTransactions.length === 0 ? (
           <div className="theme-card rounded-3xl p-6 text-center shadow-sm">
             <p className="text-sm font-bold text-[var(--card-text-main)]">No transactions yet.</p>
-            <p className="text-xs text-[var(--card-text-sub)] mt-1">Tap + SPENT to log your first money entry.</p>
+            <p className="text-xs text-[var(--card-text-sub)] mt-1">Tap + MONEY to record money in, or + SPENT to record an expense.</p>
           </div>
         ) : (
           <div className="theme-card rounded-3xl divide-y divide-[var(--card-divider)] overflow-hidden shadow-sm">
             {recentTransactions.map(tx => {
-              const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND'].includes(tx.type);
+              const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(tx.type);
               const isLending = tx.type === 'LENDING';
 
               return (
@@ -264,10 +253,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           ? 'bg-amber-500/10 text-amber-500'
                           : tx.type === 'SPLIT'
                           ? 'bg-indigo-500/10 text-indigo-500'
+                          : tx.type === 'TRANSFER'
+                          ? 'bg-blue-500/10 text-blue-500'
                           : 'bg-rose-500/10 text-rose-500'
                       }`}
                     >
-                      {isPositive ? '+' : isLending ? '↗' : tx.type === 'SPLIT' ? '👥' : '−'}
+                      {isPositive ? '+' : isLending ? '↗' : tx.type === 'SPLIT' ? '👥' : tx.type === 'TRANSFER' ? '↔' : '−'}
                     </div>
 
                     <div className="min-w-0">
@@ -275,7 +266,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         {tx.note || tx.category}
                       </span>
                       <span className="text-[10px] text-[var(--card-text-sub)] mt-0.5 block font-mono truncate">
-                        {tx.category} · {tx.date}
+                        {tx.accountId === 'acc_bank' ? 'Bank' : 'Cash'} · {tx.date}
                       </span>
                     </div>
                   </div>
@@ -287,10 +278,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           ? 'text-emerald-500'
                           : isLending
                           ? 'text-amber-500'
+                          : tx.type === 'TRANSFER'
+                          ? 'text-[var(--card-text-main)]'
                           : 'text-rose-500'
                       }`}
                     >
-                      {isPositive ? '+' : '−'} {formatINR(tx.amount)}
+                      {isPositive ? '+' : tx.type === 'TRANSFER' ? '' : '−'} {formatINR(tx.amount)}
                     </span>
                     {tx.type === 'SPLIT' && (
                       <span className="text-[9px] text-[var(--card-text-dim)] block font-mono-num">
@@ -313,6 +306,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <ReservedMoneyModal
         isOpen={showReservedModal}
         onClose={() => setShowReservedModal(false)}
+      />
+      <TransferModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+      />
+      <OpeningBalanceModal
+        isOpen={showOpeningModal}
+        onClose={() => setShowOpeningModal(false)}
       />
 
     </div>

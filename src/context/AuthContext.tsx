@@ -9,7 +9,7 @@ interface AuthContextType {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   switchUser: (userId: string) => Promise<void>;
-  createCustomProfile: (name: string, monthlyBudget: number, budgetCycleStartDay?: number) => Promise<UserProfile>;
+  createCustomProfile: (name: string) => Promise<UserProfile>;
   resetToDemo: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   allUsers: UserProfile[];
@@ -49,14 +49,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAllUsers([DEMO_USER]);
           setCurrentUser(DEMO_USER);
         } else {
-          // Safe migration for budgetCycleStartDay
-          const migratedUsers = usersInDb.map(u => ({
-            ...u,
-            budgetCycleStartDay: u.budgetCycleStartDay || 5,
-          }));
-          setAllUsers(migratedUsers);
+          setAllUsers(usersInDb);
           const savedUserId = localStorage.getItem('financeos_active_user_id');
-          const matched = migratedUsers.find(u => u.id === savedUserId) || migratedUsers[0];
+          const matched = usersInDb.find(u => u.id === savedUserId) || usersInDb[0];
           setCurrentUser(matched);
           setIsDemoMode(matched.id === DEMO_USER.id);
         }
@@ -80,14 +75,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const createCustomProfile = async (name: string, monthlyBudget: number, budgetCycleStartDay: number = 5): Promise<UserProfile> => {
+  const createCustomProfile = async (name: string): Promise<UserProfile> => {
     const newUser: UserProfile = {
       id: `user_${Date.now()}`,
       name,
       email: `${name.toLowerCase().replace(/\s+/g, '')}@financeos.app`,
       currency: '₹',
-      defaultMonthlyBudget: monthlyBudget || 0,
-      budgetCycleStartDay: budgetCycleStartDay || 5,
       theme,
       customCategories: [],
     };

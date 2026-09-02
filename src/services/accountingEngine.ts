@@ -1,13 +1,14 @@
 import {
   Transaction,
-  MonthlyBudget,
-  MonthlyFinancialSummary,
-  PersonBalanceSummary,
-  WhereDidMyMoneyGoReport,
   Account,
   ReservedMoney,
-  BudgetCycleRange,
   Person,
+  PersonBalanceSummary,
+  FinancialOverviewSummary,
+  WhereDidMyMoneyGoReport,
+  ReportingPeriod,
+  ReportingDateRange,
+  MoneyLocationId,
 } from '../types/finance';
 
 const SHORT_MONTH_NAMES = [
@@ -21,7 +22,7 @@ const FULL_MONTH_NAMES = [
 ];
 
 /**
- * Returns YYYY-MM-DD string using local calendar date (avoids UTC offset shifts)
+ * Formats a Date object to local YYYY-MM-DD string without UTC shift bugs
  */
 export function formatLocalDate(date: Date = new Date()): string {
   const year = date.getFullYear();
@@ -39,7 +40,7 @@ export function parseLocalDate(dateStr: string): Date {
 }
 
 /**
- * Formats currency amount in Indian Rupee format (e.g. ₹10,000 or -₹500)
+ * Formats currency amount in Indian Rupee format (e.g. ₹3,200 or −₹500)
  */
 export function formatINR(amount: number): string {
   const isNegative = amount < 0;
@@ -60,183 +61,187 @@ export function getYearMonth(dateInput: string | Date = new Date()): string {
 }
 
 /**
- * Computes the exact budget cycle range for a given date and cycle start day.
- * Example: startDay = 5
- * If refDate = Sep 10, 2026 -> Start: 2026-09-05, End: 2026-10-04 (Sep 5 → Oct 4)
- * If refDate = Sep 3, 2026  -> Start: 2026-08-05, End: 2026-09-04 (Aug 5 → Sep 4)
+ * Generates reporting date ranges for a given period
  */
-export function getBudgetCycleRange(
-  dateInput: string | Date = new Date(),
-  startDay: number = 5
-): BudgetCycleRange {
-  const date = typeof dateInput === 'string' ? parseLocalDate(dateInput) : new Date(dateInput);
-  const safeStartDay = Math.min(28, Math.max(1, startDay || 1));
+export function getReportingDateRange(
+  period: ReportingPeriod = 'THIS_MONTH',
+  referenceDate: Date = new Date()
+): ReportingDateRange {
+  const todayStr = formatLocalDate(referenceDate);
+  const refYear = referenceDate.getFullYear();
+  const refMonth = referenceDate.getMonth(); // 0-indexed
 
-  let startYear = date.getFullYear();
-  let startMonth = date.getMonth(); // 0-indexed
+  switch (period) {
+    case 'TODAY':
+      return {
+        key: `today_${todayStr}`,
+        label: 'Today',
+        startDate: todayStr,
+        endDate: todayStr,
+        isCurrent: true,
+      };
 
-  if (safeStartDay === 1) {
-    // Standard calendar month cycle: 1st to end of month
-    const startDate = new Date(startYear, startMonth, 1);
-    const lastDayOfMonth = new Date(startYear, startMonth + 1, 0).getDate();
-    const endDate = new Date(startYear, startMonth, lastDayOfMonth);
+    case 'LAST_7_DAYS': {
+      const sevenDaysAgo = new Date(referenceDate);
+      sevenDaysAgo.setDate(referenceDate.getDate() - 6);
+      const startStr = formatLocalDate(sevenDaysAgo);
+      return {
+        key: `last7_${startStr}_${todayStr}`,
+        label: 'Last 7 Days',
+        startDate: startStr,
+        endDate: todayStr,
+        isCurrent: true,
+      };
+    }
 
-    const startStr = formatLocalDate(startDate);
-    const endStr = formatLocalDate(endDate);
-    const label = `${SHORT_MONTH_NAMES[startMonth]} 1 → ${SHORT_MONTH_NAMES[startMonth]} ${lastDayOfMonth}`;
-    const shortLabel = `${FULL_MONTH_NAMES[startMonth]} ${startYear}`;
+    case 'LAST_MONTH': {
+      let lastMonth = refMonth - 1;
+      let lastYear = refYear;
+      if (lastMonth < 0) {
+        lastMonth = 11;
+        lastYear -= 1;
+      }
+      const lastMonthStart = new Date(lastYear, lastMonth, 1);
+      const lastDayOfLastMonth = new Date(lastYear, lastMonth + 1, 0).getDate();
+      const lastMonthEnd = new Date(lastYear, lastMonth, lastDayOfLastMonth);
 
-    const todayStr = formatLocalDate(new Date());
-    const isCurrent = todayStr >= startStr && todayStr <= endStr;
+      return {
+        key: `month_${lastYear}-${String(lastMonth + 1).padStart(2, '0')}`,
+        label: `${FULL_MONTH_NAMES[lastMonth]} ${lastYear}`,
+        startDate: formatLocalDate(lastMonthStart),
+        endDate: formatLocalDate(lastMonthEnd),
+        isCurrent: false,
+      };
+    }
 
-    const totalDays = lastDayOfMonth;
-    const currentDayVal = date.getDate();
-    const currentDayIndex = Math.min(totalDays, Math.max(1, currentDayVal));
-    const daysRemaining = Math.max(0, totalDays - currentDayIndex);
+    case 'ALL_TIME':
+      return {
+        key: 'all_time',
+        label: 'All Time',
+        startDate: '2000-01-01',
+        endDate: '2099-12-31',
+        isCurrent: true,
+      };
 
-    return {
-      cycleKey: `${startStr}_${endStr}`,
-      label,
-      shortLabel,
-      startDate: startStr,
-      endDate: endStr,
-      startDay: 1,
-      year: startYear,
-      month: startMonth + 1,
-      isCurrent,
-      totalDays,
-      currentDayIndex,
-      daysRemaining,
-    };
-  }
+    case 'THIS_MONTH':
+    default: {
+      const startOfMonth = new Date(refYear, refMonth, 1);
+      const lastDayOfMonth = new Date(refYear, refMonth + 1, 0).getDate();
+      const endOfMonth = new Date(refYear, refMonth, lastDayOfMonth);
 
-  // Custom cycle start day (e.g. 5th of month)
-  if (date.getDate() < safeStartDay) {
-    // We are before the cycle start day in the current calendar month -> cycle started last month
-    startMonth -= 1;
-    if (startMonth < 0) {
-      startMonth = 11;
-      startYear -= 1;
+      return {
+        key: `month_${refYear}-${String(refMonth + 1).padStart(2, '0')}`,
+        label: `${FULL_MONTH_NAMES[refMonth]} ${refYear}`,
+        startDate: formatLocalDate(startOfMonth),
+        endDate: formatLocalDate(endOfMonth),
+        isCurrent: true,
+      };
     }
   }
-
-  const startDate = new Date(startYear, startMonth, safeStartDay);
-  
-  // End date is (safeStartDay - 1) of the next month
-  let endMonth = startMonth + 1;
-  let endYear = startYear;
-  if (endMonth > 11) {
-    endMonth = 0;
-    endYear += 1;
-  }
-  const endDate = new Date(endYear, endMonth, safeStartDay - 1);
-
-  const startStr = formatLocalDate(startDate);
-  const endStr = formatLocalDate(endDate);
-
-  const label = `${SHORT_MONTH_NAMES[startMonth]} ${safeStartDay} → ${SHORT_MONTH_NAMES[endMonth]} ${safeStartDay - 1}`;
-  const shortLabel = `${label}, ${startYear}`;
-
-  const todayStr = formatLocalDate(new Date());
-  const isCurrent = todayStr >= startStr && todayStr <= endStr;
-
-  const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  const passedMs = date.getTime() - startDate.getTime();
-  const currentDayIndex = Math.min(totalDays, Math.max(1, Math.floor(passedMs / (1000 * 60 * 60 * 24)) + 1));
-  const daysRemaining = Math.max(0, totalDays - currentDayIndex);
-
-  return {
-    cycleKey: `${startStr}_${endStr}`,
-    label,
-    shortLabel,
-    startDate: startStr,
-    endDate: endStr,
-    startDay: safeStartDay,
-    year: startYear,
-    month: startMonth + 1,
-    isCurrent,
-    totalDays,
-    currentDayIndex,
-    daysRemaining,
-  };
 }
 
 /**
- * Returns a list of past and current budget cycle ranges for navigation
- */
-export function getPreviousBudgetCycles(
-  count: number = 6,
-  startDay: number = 5,
-  referenceDate: Date = new Date()
-): BudgetCycleRange[] {
-  const cycles: BudgetCycleRange[] = [];
-  const currentCycle = getBudgetCycleRange(referenceDate, startDay);
-  cycles.push(currentCycle);
-
-  let curStartDate = parseLocalDate(currentCycle.startDate);
-  for (let i = 1; i < count; i++) {
-    // Step back 15 days before the start of previous cycle
-    const prevDate = new Date(curStartDate);
-    prevDate.setDate(prevDate.getDate() - 10);
-    const prevCycle = getBudgetCycleRange(prevDate, startDay);
-    cycles.push(prevCycle);
-    curStartDate = parseLocalDate(prevCycle.startDate);
-  }
-
-  return cycles;
-}
-
-/**
- * Computes exact account physical cash balances directly from the transaction ledger.
- * Single source of truth: guaranteed consistent regardless of edits or deletions.
+ * Computes exact physical cash and bank balances strictly from the transaction ledger.
+ * This is the SINGLE SOURCE OF TRUTH for account balances.
  */
 export function computeAccountBalancesFromLedger(
   transactions: Transaction[],
-  accounts: Account[]
+  baseAccounts: Account[] = []
 ): Account[] {
-  const balanceMap = new Map<string, number>();
-  for (const acc of accounts) {
-    balanceMap.set(acc.id, 0);
-  }
+  // Normalize accounts to strictly Bank and Cash
+  let bankBalance = 0;
+  let cashBalance = 0;
 
-  // Chronologically apply active transactions
   for (const tx of transactions) {
-    const accId = tx.accountId;
-    const cur = balanceMap.get(accId) || 0;
+    // Determine which account is targeted
+    const isBank = tx.accountId === 'acc_bank' || tx.accountId === 'bank' || tx.accountId === 'acc_upi' || tx.accountId === 'upi';
+    const isCash = tx.accountId === 'acc_cash' || tx.accountId === 'cash';
 
     switch (tx.type) {
-      case 'EXPENSE':
-      case 'SPLIT':
-      case 'LENDING':
-        balanceMap.set(accId, cur - tx.amount);
-        break;
-
+      case 'OPENING_BALANCE':
       case 'MONEY_RECEIVED':
       case 'REIMBURSEMENT':
       case 'LOAN_REPAYMENT':
       case 'REFUND':
-        balanceMap.set(accId, cur + tx.amount);
+        if (isBank) bankBalance += tx.amount;
+        else if (isCash) cashBalance += tx.amount;
+        break;
+
+      case 'EXPENSE':
+      case 'SPLIT':
+      case 'LENDING':
+        if (isBank) bankBalance -= tx.amount;
+        else if (isCash) cashBalance -= tx.amount;
         break;
 
       case 'TRANSFER':
-        balanceMap.set(accId, cur - tx.amount);
-        if (tx.toAccountId) {
-          const toCur = balanceMap.get(tx.toAccountId) || 0;
-          balanceMap.set(tx.toAccountId, toCur + tx.amount);
+        // Source account loses money
+        if (isBank) bankBalance -= tx.amount;
+        else if (isCash) cashBalance -= tx.amount;
+
+        // Destination account gains money
+        if (tx.toAccountId === 'acc_bank' || tx.toAccountId === 'bank') {
+          bankBalance += tx.amount;
+        } else if (tx.toAccountId === 'acc_cash' || tx.toAccountId === 'cash') {
+          cashBalance += tx.amount;
         }
         break;
 
       case 'ADJUSTMENT':
-        // Adjustment applies delta (amount can be positive or negative)
-        balanceMap.set(accId, cur + tx.amount);
+        // Cash adjustment delta
+        if (isBank) bankBalance += tx.amount;
+        else if (isCash) cashBalance += tx.amount;
         break;
     }
   }
 
-  return accounts.map(acc => ({
-    ...acc,
-    balance: balanceMap.get(acc.id) || 0,
-  }));
+  const userId = baseAccounts[0]?.userId || 'student_user_1';
+
+  return [
+    {
+      id: 'acc_bank',
+      userId,
+      name: 'Bank Account',
+      type: 'BANK',
+      balance: bankBalance,
+    },
+    {
+      id: 'acc_cash',
+      userId,
+      name: 'Cash in Hand',
+      type: 'CASH',
+      balance: cashBalance,
+    },
+  ];
+}
+
+/**
+ * Checks if an account has sufficient balance before spending/lending/transferring
+ */
+export function checkSufficientBalance(
+  accountId: string,
+  amountToDeduct: number,
+  accounts: Account[]
+): {
+  hasSufficient: boolean;
+  currentBalance: number;
+  missingAmount: number;
+  accountName: string;
+} {
+  const account = accounts.find(a => a.id === accountId || (accountId === 'acc_bank' && a.type === 'BANK') || (accountId === 'acc_cash' && a.type === 'CASH'))
+    || accounts[0];
+
+  const currentBalance = account?.balance || 0;
+  const hasSufficient = currentBalance >= amountToDeduct;
+  const missingAmount = Math.max(0, amountToDeduct - currentBalance);
+  const accountName = account?.name || 'Account';
+
+  return {
+    hasSufficient,
+    currentBalance,
+    missingAmount,
+    accountName,
+  };
 }
 
 /**
@@ -341,52 +346,91 @@ export function calculateAllPersonBalances(
 }
 
 /**
- * Main accounting function to calculate comprehensive budget cycle summary
+ * Master Financial Overview Calculator
+ *
+ * Fundamental Equations:
+ * 1. Current Money = Bank Balance + Cash Balance
+ * 2. Spendable Money = Current Money - Active Reserved Money
+ * 3. Total Received = Sum of MONEY_RECEIVED in reporting period (NOT a budget limit!)
+ * 4. Personal Spending = Expenses + Split User Share - Refunds in period
+ * 5. Receivables (Splits + Loans) are NEVER added to Current Money
  */
-export function calculateBudgetCycleSummary(
-  cycle: BudgetCycleRange,
+export function calculateFinancialOverview(
   transactions: Transaction[],
-  budget: MonthlyBudget | null,
   reservedList: ReservedMoney[] = [],
-  accounts: Account[] = [],
-  referenceDateStr?: string
-): MonthlyFinancialSummary {
-  const todayStr = referenceDateStr || formatLocalDate(new Date());
+  period: ReportingPeriod = 'THIS_MONTH',
+  referenceDate: Date = new Date()
+): FinancialOverviewSummary {
+  const dateRange = getReportingDateRange(period, referenceDate);
+  const todayStr = formatLocalDate(referenceDate);
 
-  // Filter transactions strictly within this budget cycle
-  const cycleTransactions = transactions.filter(tx => {
-    return tx.date >= cycle.startDate && tx.date <= cycle.endDate;
+  // 1. Current Physical Money (Always authoritative from full transaction history)
+  const computedAccounts = computeAccountBalancesFromLedger(transactions);
+  const bankAccount = computedAccounts.find(a => a.id === 'acc_bank') || computedAccounts[0];
+  const cashAccount = computedAccounts.find(a => a.id === 'acc_cash') || computedAccounts[1];
+
+  const bankBalance = bankAccount?.balance || 0;
+  const cashBalance = cashAccount?.balance || 0;
+  const currentMoney = bankBalance + cashBalance;
+
+  // 2. Active Reserved Money (Funds committed for rent, fees, etc.)
+  const totalReserved = reservedList
+    .filter(r => !r.isFulfilled)
+    .reduce((sum, r) => sum + r.amount, 0);
+
+  // 3. Spendable Money = Current Money - Reserved Money
+  const spendableMoney = currentMoney - totalReserved;
+
+  // 4. Period Inflows & Spending
+  const periodTransactions = transactions.filter(tx => {
+    return tx.date >= dateRange.startDate && tx.date <= dateRange.endDate;
   });
 
-  let totalReceived = 0;
-  let explicitBudget = budget ? budget.totalBudget : 0;
-  let actualPersonalSpent = 0;
-  let totalPaidForOthers = 0;
-  let totalReimbursed = 0;
-  let totalMoneyLent = 0;
-  let totalLoanRepayments = 0;
+  let totalReceivedInPeriod = 0;
+  let actualPersonalSpentInPeriod = 0;
+  let totalPaidForOthersInPeriod = 0;
+  let totalReimbursedInPeriod = 0;
+  let totalMoneyLentInPeriod = 0;
+  let totalLoanRepaymentsInPeriod = 0;
 
   const categoryMap = new Map<string, number>();
 
   // Rolling last 7 days calculation
-  const todayDate = parseLocalDate(todayStr);
-  const sevenDaysAgo = new Date(todayDate);
-  sevenDaysAgo.setDate(todayDate.getDate() - 6);
+  const sevenDaysAgo = new Date(referenceDate);
+  sevenDaysAgo.setDate(referenceDate.getDate() - 6);
   const sevenDaysAgoStr = formatLocalDate(sevenDaysAgo);
 
   let todaySpent = 0;
-  let thisWeekSpent = 0;
+  let last7DaysSpent = 0;
 
-  for (const tx of cycleTransactions) {
+  for (const tx of transactions) {
     const isToday = tx.date === todayStr;
     const isInLast7Days = tx.date >= sevenDaysAgoStr && tx.date <= todayStr;
 
+    // Spending in last 7 days & today
+    if (tx.type === 'EXPENSE') {
+      if (isToday) todaySpent += tx.amount;
+      if (isInLast7Days) last7DaysSpent += tx.amount;
+    } else if (tx.type === 'SPLIT') {
+      const userShare = typeof tx.userShare === 'number' ? tx.userShare : tx.amount;
+      if (isToday) todaySpent += userShare;
+      if (isInLast7Days) last7DaysSpent += userShare;
+    } else if (tx.type === 'REFUND') {
+      if (isToday) todaySpent = Math.max(0, todaySpent - tx.amount);
+      if (isInLast7Days) last7DaysSpent = Math.max(0, last7DaysSpent - tx.amount);
+    }
+  }
+
+  // Period-specific metrics
+  for (const tx of periodTransactions) {
     switch (tx.type) {
+      case 'MONEY_RECEIVED':
+        totalReceivedInPeriod += tx.amount;
+        break;
+
       case 'EXPENSE': {
-        actualPersonalSpent += tx.amount;
+        actualPersonalSpentInPeriod += tx.amount;
         categoryMap.set(tx.category, (categoryMap.get(tx.category) || 0) + tx.amount);
-        if (isToday) todaySpent += tx.amount;
-        if (isInLast7Days) thisWeekSpent += tx.amount;
         break;
       }
 
@@ -394,195 +438,128 @@ export function calculateBudgetCycleSummary(
         const userPortion = typeof tx.userShare === 'number' ? tx.userShare : tx.amount;
         const othersPortion = tx.amount - userPortion;
 
-        actualPersonalSpent += userPortion;
-        totalPaidForOthers += othersPortion;
-
+        actualPersonalSpentInPeriod += userPortion;
+        totalPaidForOthersInPeriod += othersPortion;
         categoryMap.set(tx.category, (categoryMap.get(tx.category) || 0) + userPortion);
-
-        if (isToday) todaySpent += userPortion;
-        if (isInLast7Days) thisWeekSpent += userPortion;
         break;
       }
 
-      case 'LENDING': {
-        totalMoneyLent += tx.amount;
+      case 'LENDING':
+        totalMoneyLentInPeriod += tx.amount;
         break;
-      }
 
-      case 'MONEY_RECEIVED': {
-        totalReceived += tx.amount;
-        if (tx.isMonthlyBudget) {
-          explicitBudget += tx.amount;
-        }
+      case 'REIMBURSEMENT':
+        totalReimbursedInPeriod += tx.amount;
         break;
-      }
 
-      case 'REIMBURSEMENT': {
-        totalReimbursed += tx.amount;
+      case 'LOAN_REPAYMENT':
+        totalLoanRepaymentsInPeriod += tx.amount;
         break;
-      }
-
-      case 'LOAN_REPAYMENT': {
-        totalLoanRepayments += tx.amount;
-        break;
-      }
 
       case 'REFUND': {
-        actualPersonalSpent = Math.max(0, actualPersonalSpent - tx.amount);
-        const prevCat = categoryMap.get(tx.category) || 0;
-        categoryMap.set(tx.category, Math.max(0, prevCat - tx.amount));
+        actualPersonalSpentInPeriod = Math.max(0, actualPersonalSpentInPeriod - tx.amount);
+        const curCat = categoryMap.get(tx.category) || 0;
+        categoryMap.set(tx.category, Math.max(0, curCat - tx.amount));
         break;
       }
 
+      case 'OPENING_BALANCE':
       case 'TRANSFER':
       case 'ADJUSTMENT':
         break;
     }
   }
 
-  // Active Total Budget for this cycle
-  const totalBudget = explicitBudget > 0 ? explicitBudget : (budget?.totalBudget || totalReceived);
+  // Receivables across the entire ledger (All-time outstanding)
+  let totalSplitsAllTime = 0;
+  let totalReimbursedAllTime = 0;
+  let totalLentAllTime = 0;
+  let totalRepaymentsAllTime = 0;
 
-  // Active Reserved Money (Unfulfilled reservations)
-  const totalReserved = reservedList
-    .filter(r => !r.isFulfilled)
-    .reduce((sum, r) => sum + r.amount, 0);
-
-  // SPENDABLE MONEY: Total Budget - Reserved - Actual Personal Spent
-  const spendableMoney = totalBudget - totalReserved - actualPersonalSpent;
-  const isOverBudget = spendableMoney < 0;
-  const overBudgetAmount = isOverBudget ? Math.abs(spendableMoney) : 0;
-  const leftToSpend = spendableMoney;
-
-  // Receivables
-  const pendingSplitReceivables = Math.max(0, totalPaidForOthers - totalReimbursed);
-  const pendingLoanReceivables = Math.max(0, totalMoneyLent - totalLoanRepayments);
-  const totalMoneyOwedToYou = pendingSplitReceivables + pendingLoanReceivables;
-
-  // Total physical cash across accounts
-  const totalPhysicalCashBalance = accounts.reduce((acc, a) => acc + a.balance, 0);
-
-  // Spending Pace calculation
-  const passedDays = Math.max(1, cycle.currentDayIndex);
-  const dailySpendingPace = Math.round(actualPersonalSpent / passedDays);
-  const recommendedDailyPace = cycle.daysRemaining > 0
-    ? Math.round(Math.max(0, spendableMoney) / cycle.daysRemaining)
-    : 0;
-
-  // Pace status evaluation
-  let paceStatus: 'ON_TRACK' | 'SLIGHTLY_FAST' | 'OVERSPENDING' | 'AHEAD_OF_BUDGET' = 'ON_TRACK';
-  let paceMessage = '';
-
-  const estimatedRemainingAtCurrentPace = Math.round(totalBudget - totalReserved - (dailySpendingPace * cycle.totalDays));
-
-  if (totalBudget === 0) {
-    paceStatus = 'ON_TRACK';
-    paceMessage = 'Record your budget or money received to track spending pace.';
-  } else if (isOverBudget) {
-    paceStatus = 'OVERSPENDING';
-    paceMessage = `You are ${formatINR(overBudgetAmount)} over your cycle budget.`;
-  } else if (dailySpendingPace > (totalBudget / cycle.totalDays) * 1.25) {
-    paceStatus = 'OVERSPENDING';
-    paceMessage = "You're spending faster than your planned daily budget.";
-  } else if (dailySpendingPace > (totalBudget / cycle.totalDays) * 1.05) {
-    paceStatus = 'SLIGHTLY_FAST';
-    paceMessage = "You're spending slightly faster than your target pace.";
-  } else if (dailySpendingPace < (totalBudget / cycle.totalDays) * 0.8) {
-    paceStatus = 'AHEAD_OF_BUDGET';
-    paceMessage = `You're on track to finish with ~${formatINR(Math.max(0, estimatedRemainingAtCurrentPace))} remaining.`;
-  } else {
-    paceStatus = 'ON_TRACK';
-    paceMessage = `Pace is balanced. Recommended: ${formatINR(recommendedDailyPace)}/day.`;
+  for (const tx of transactions) {
+    if (tx.type === 'SPLIT') {
+      const userPortion = typeof tx.userShare === 'number' ? tx.userShare : tx.amount;
+      totalSplitsAllTime += (tx.amount - userPortion);
+    } else if (tx.type === 'REIMBURSEMENT') {
+      totalReimbursedAllTime += tx.amount;
+    } else if (tx.type === 'LENDING') {
+      totalLentAllTime += tx.amount;
+    } else if (tx.type === 'LOAN_REPAYMENT') {
+      totalRepaymentsAllTime += tx.amount;
+    }
   }
 
-  // Category breakdown
+  const pendingSplitReceivables = Math.max(0, totalSplitsAllTime - totalReimbursedAllTime);
+  const pendingLoanReceivables = Math.max(0, totalLentAllTime - totalRepaymentsAllTime);
+  const totalMoneyOwedToYou = pendingSplitReceivables + pendingLoanReceivables;
+
+  // Category breakdown for reporting period
   const categorySpending = Array.from(categoryMap.entries())
     .map(([category, amount]) => {
-      const percentage = actualPersonalSpent > 0 ? Math.round((amount / actualPersonalSpent) * 100) : 0;
-      const allocatedBudget = budget?.allocations?.[category];
-      return {
-        category,
-        amount,
-        percentage,
-        allocatedBudget,
-      };
+      const percentage = actualPersonalSpentInPeriod > 0 ? Math.round((amount / actualPersonalSpentInPeriod) * 100) : 0;
+      return { category, amount, percentage };
     })
     .sort((a, b) => b.amount - a.amount);
 
   return {
-    yearMonth: `${cycle.year}-${String(cycle.month).padStart(2, '0')}`,
-    monthName: cycle.shortLabel,
-    cycle,
-    totalBudget,
-    totalReceived,
-    actualPersonalSpent,
+    bankBalance,
+    cashBalance,
+    currentMoney,
     totalReserved,
     spendableMoney,
-    leftToSpend,
-    isOverBudget,
-    overBudgetAmount,
-    totalPaidForOthers,
-    totalReimbursed,
     pendingSplitReceivables,
-    totalMoneyLent,
-    totalLoanRepayments,
     pendingLoanReceivables,
     totalMoneyOwedToYou,
-    totalPhysicalCashBalance,
-    daysInMonth: cycle.totalDays,
-    currentDay: cycle.currentDayIndex,
-    daysRemaining: cycle.daysRemaining,
-    dailySpendingPace,
-    recommendedDailyPace,
-    paceStatus,
-    paceMessage,
-    estimatedRemainingAtCurrentPace,
-    categorySpending,
+    periodLabel: dateRange.label,
+    totalReceivedInPeriod,
+    actualPersonalSpentInPeriod,
+    totalPaidForOthersInPeriod,
+    totalReimbursedInPeriod,
+    totalMoneyLentInPeriod,
+    totalLoanRepaymentsInPeriod,
     todaySpent,
-    thisWeekSpent,
+    last7DaysSpent,
+    categorySpending,
   };
 }
 
 /**
- * Generates transparent "Where Did My Money Go?" plain-English story
+ * Generates transparent "Where Did My Money Go?" natural-language story report
  */
 export function generateWhereDidMyMoneyGo(
-  cycle: BudgetCycleRange,
   transactions: Transaction[],
-  budget: MonthlyBudget | null,
-  reservedList: ReservedMoney[] = []
+  reservedList: ReservedMoney[] = [],
+  period: ReportingPeriod = 'THIS_MONTH'
 ): WhereDidMyMoneyGoReport {
-  const summary = calculateBudgetCycleSummary(cycle, transactions, budget, reservedList);
+  const summary = calculateFinancialOverview(transactions, reservedList, period);
 
   const topCategories = summary.categorySpending.slice(0, 3);
   const topCatListText = topCategories.length > 0
     ? topCategories.map(c => `${c.category} (${formatINR(c.amount)})`).join(', ')
-    : 'No expenses recorded yet';
+    : 'No expenses recorded';
 
   const reservedText = summary.totalReserved > 0
-    ? ` You set aside ${formatINR(summary.totalReserved)} in reserved money.`
+    ? ` You have set aside ${formatINR(summary.totalReserved)} in reserved funds.`
     : '';
 
-  const summaryParagraph = `During ${summary.cycle.label}, you received ${formatINR(summary.totalBudget)} in total money.${reservedText} You personally spent ${formatINR(summary.actualPersonalSpent)}, primarily on ${topCatListText}. You paid ${formatINR(summary.totalPaidForOthers)} for friends (${formatINR(summary.totalReimbursed)} reimbursed, ${formatINR(summary.pendingSplitReceivables)} still owed) and lent ${formatINR(summary.totalMoneyLent)} (${formatINR(summary.pendingLoanReceivables)} still outstanding). ${summary.isOverBudget ? `You are currently ${formatINR(summary.overBudgetAmount)} over budget.` : `You have ${formatINR(summary.spendableMoney)} remaining to spend.`}`;
+  const summaryParagraph = `During ${summary.periodLabel}, you received ${formatINR(summary.totalReceivedInPeriod)} in total money. You currently have ${formatINR(summary.currentMoney)} in total physical cash (${formatINR(summary.bankBalance)} in Bank, ${formatINR(summary.cashBalance)} in Cash).${reservedText} You personally spent ${formatINR(summary.actualPersonalSpentInPeriod)}, primarily on ${topCatListText}. You paid ${formatINR(summary.totalPaidForOthersInPeriod)} on behalf of friends (${formatINR(summary.totalReimbursedInPeriod)} reimbursed, ${formatINR(summary.pendingSplitReceivables)} still owed) and lent ${formatINR(summary.totalMoneyLentInPeriod)} (${formatINR(summary.pendingLoanReceivables)} currently outstanding). You have ${formatINR(summary.spendableMoney)} spendable money available right now.`;
 
   return {
-    yearMonth: summary.yearMonth,
-    monthName: summary.monthName,
-    cycleLabel: summary.cycle.label,
-    totalReceived: summary.totalBudget,
-    actualPersonalSpending: summary.actualPersonalSpent,
+    periodLabel: summary.periodLabel,
+    currentMoney: summary.currentMoney,
+    bankBalance: summary.bankBalance,
+    cashBalance: summary.cashBalance,
+    totalReceived: summary.totalReceivedInPeriod,
+    actualPersonalSpending: summary.actualPersonalSpentInPeriod,
     topCategories,
-    paidForOthers: summary.totalPaidForOthers,
-    reimbursed: summary.totalReimbursed,
+    paidForOthers: summary.totalPaidForOthersInPeriod,
+    reimbursed: summary.totalReimbursedInPeriod,
     stillOwedFromSplits: summary.pendingSplitReceivables,
-    moneyLent: summary.totalMoneyLent,
-    repaidLoans: summary.totalLoanRepayments,
+    moneyLent: summary.totalMoneyLentInPeriod,
+    repaidLoans: summary.totalLoanRepaymentsInPeriod,
     stillOutstandingLoans: summary.pendingLoanReceivables,
     totalReserved: summary.totalReserved,
     spendableMoney: summary.spendableMoney,
-    remainingBudget: summary.leftToSpend,
-    isOverBudget: summary.isOverBudget,
-    overBudgetAmount: summary.overBudgetAmount,
     summaryParagraph,
   };
 }
