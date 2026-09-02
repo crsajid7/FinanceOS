@@ -68,6 +68,7 @@ interface FinanceContextType {
 
   // People Operations
   addPerson: (name: string, phone?: string) => Promise<Person>;
+  ensurePerson: (name: string, phone?: string) => Promise<Person>;
   deletePerson: (id: string) => Promise<void>;
 
   // Balance Guard Helper
@@ -139,15 +140,108 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return checkSufficientBalance(accountId, amount, accounts);
   }, [accounts]);
 
-  // Add Transaction
+  // Ensure Person exists without duplicates (case-insensitive match & auto-creation)
+  const ensurePerson = useCallback(async (name: string, phone?: string): Promise<Person> => {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('Person name cannot be empty');
+
+    const normalized = trimmed.toLowerCase();
+
+    // 1. Look up in state
+    const existingInState = people.find(p => p.name.trim().toLowerCase() === normalized);
+    if (existingInState) {
+      return existingInState;
+    }
+
+    // 2. Query Dexie table directly
+    const existingInDb = await db.people
+      .where('userId')
+      .equals(userId)
+      .filter(p => p.name.trim().toLowerCase() === normalized)
+      .first();
+
+    if (existingInDb) {
+      return existingInDb;
+    }
+
+    // 3. Create new person in Dexie
+    const newPerson: Person = {
+      id: `person_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      userId,
+      name: trimmed,
+      phone: phone?.trim() || undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await db.people.add(newPerson);
+    setPeople(prev => [...prev, newPerson]);
+    return newPerson;
+  }, [people, userId]);
+
+  // Add Person (alias with duplicate prevention)
+  const addPerson = useCallback(async (name: string, phone?: string): Promise<Person> => {
+    return ensurePerson(name, phone);
+  }, [ensurePerson]);
+
+  const deletePerson = async (id: string) => {
+    await db.people.delete(id);
+    await loadUserData();
+  };
+
+  // Add Transaction (with automatic person resolution and atomic person creation)
   const addTransaction = async (
     txData: AddTransactionInput
   ): Promise<Transaction> => {
     const now = new Date();
+
+    // Auto-resolve split participants
+    let resolvedSplits = txData.splits;
+    if (txData.type === 'SPLIT' && txData.splits && txData.splits.length > 0) {
+      resolvedSplits = await Promise.all(
+        txData.splits.map(async (s) => {
+          let pid = s.personId;
+          let pname = s.personName?.trim() || '';
+          if (!pid || pid === '') {
+            const p = await ensurePerson(pname);
+            pid = p.id;
+            pname = p.name;
+          }
+          return {
+            ...s,
+            personId: pid,
+            personName: pname,
+          };
+        })
+      );
+    }
+
+    // Auto-resolve main person reference (Lending, Borrowed Money, etc.)
+    let resolvedPersonId = txData.personId;
+    let resolvedPersonName = txData.personName;
+    let resolvedLoanDetails = txData.loanDetails;
+
+    if (txData.personName && (!resolvedPersonId || resolvedPersonId === '')) {
+      const p = await ensurePerson(txData.personName);
+      resolvedPersonId = p.id;
+      resolvedPersonName = p.name;
+      if (resolvedLoanDetails) {
+        resolvedLoanDetails = {
+          ...resolvedLoanDetails,
+          personId: p.id,
+          personName: p.name,
+        };
+      }
+    }
+
     const newTx: Transaction = {
       ...txData,
       id: `tx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       userId,
+      personId: resolvedPersonId,
+      personName: resolvedPersonName,
+      splits: resolvedSplits,
+      loanDetails: resolvedLoanDetails,
       date: txData.date || formatLocalDate(now),
       time: txData.time || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
       status: 'ACTIVE',
@@ -382,26 +476,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await loadUserData();
   };
 
-  // Add Person
-  const addPerson = async (name: string, phone?: string): Promise<Person> => {
-    const newP: Person = {
-      id: `person_${Date.now()}`,
-      userId,
-      name,
-      phone,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    await db.people.add(newP);
-    await loadUserData();
-    return newP;
-  };
-
-  const deletePerson = async (id: string) => {
-    await db.people.delete(id);
-    await loadUserData();
-  };
-
   // Export All Data
   const exportAllData = async (): Promise<string> => {
     const payload: ExportDataPayload = {
@@ -482,6 +556,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         toggleReservationFulfilled,
         deleteReservation,
         addPerson,
+        ensurePerson,
         deletePerson,
         verifyBalance,
         exportAllData,

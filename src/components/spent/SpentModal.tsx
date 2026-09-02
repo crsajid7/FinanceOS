@@ -121,10 +121,22 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   const cashAccount = accounts.find(a => a.id === 'acc_cash') || accounts[1];
 
   const handleAddSplitFriend = (personId: string, personName: string) => {
-    if (splitFriends.some(f => f.personId === personId || f.personName.toLowerCase() === personName.toLowerCase())) {
+    const trimmed = personName.trim();
+    if (!trimmed) return;
+
+    const normalized = trimmed.toLowerCase();
+
+    // Check if already in current split list
+    if (splitFriends.some(f => (personId && f.personId === personId) || f.personName.trim().toLowerCase() === normalized)) {
       return;
     }
-    const nextFriends = [...splitFriends, { personId, personName, amountStr: '' }];
+
+    // Check if person already exists in people list
+    const existingPerson = people.find(p => p.name.trim().toLowerCase() === normalized);
+    const finalPid = personId || existingPerson?.id || '';
+    const finalName = existingPerson?.name || trimmed;
+
+    const nextFriends = [...splitFriends, { personId: finalPid, personName: finalName, amountStr: '' }];
     const totalCount = nextFriends.length + 1;
     const equalShare = Math.round(numericAmount / totalCount);
 
