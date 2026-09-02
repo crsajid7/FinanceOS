@@ -10,6 +10,7 @@ import {
   Sparkles,
   Landmark,
   Banknote,
+  ArrowDownLeft,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { Transaction } from '../../types/finance';
@@ -30,7 +31,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
       if (filterType === 'EXPENSE' && tx.type !== 'EXPENSE') return false;
       if (filterType === 'SPLIT' && tx.type !== 'SPLIT') return false;
       if (filterType === 'LENDING' && tx.type !== 'LENDING') return false;
-      if (filterType === 'MONEY_IN' && !['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(tx.type)) {
+      if (filterType === 'BORROW' && tx.type !== 'BORROWED_MONEY' && tx.type !== 'BORROW_REPAYMENT') return false;
+      if (filterType === 'MONEY_IN' && !['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'BORROWED_MONEY', 'REFUND', 'OPENING_BALANCE'].includes(tx.type)) {
         return false;
       }
       if (filterType === 'TRANSFER' && tx.type !== 'TRANSFER' && tx.type !== 'ADJUSTMENT') return false;
@@ -107,11 +109,18 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
             <span>Lent to {tx.personName || 'Friend'}</span>
           </span>
         );
+      case 'BORROWED_MONEY':
+        return (
+          <span className="text-[11px] font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md flex items-center space-x-1">
+            <ArrowDownLeft className="w-3 h-3" />
+            <span>Borrowed from {tx.personName || 'Friend'}</span>
+          </span>
+        );
       case 'REIMBURSEMENT':
         return (
           <span className="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md flex items-center space-x-1">
             <RotateCcw className="w-3 h-3" />
-            <span>Reimbursement ({tx.personName})</span>
+            <span>Split Settled ({tx.personName})</span>
           </span>
         );
       case 'LOAN_REPAYMENT':
@@ -119,6 +128,13 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
           <span className="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md flex items-center space-x-1">
             <RotateCcw className="w-3 h-3" />
             <span>Loan Repaid ({tx.personName})</span>
+          </span>
+        );
+      case 'BORROW_REPAYMENT':
+        return (
+          <span className="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md flex items-center space-x-1">
+            <RotateCcw className="w-3 h-3" />
+            <span>Repaid Friend ({tx.personName})</span>
           </span>
         );
       case 'MONEY_RECEIVED':
@@ -178,6 +194,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
             { id: 'EXPENSE', label: 'Spending' },
             { id: 'SPLIT', label: 'Friend Splits' },
             { id: 'LENDING', label: 'Lending' },
+            { id: 'BORROW', label: 'Borrowed & Repaid' },
             { id: 'MONEY_IN', label: 'Money In' },
             { id: 'TRANSFER', label: 'Transfers & Adjustments' },
           ].map(chip => (
@@ -212,8 +229,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onSelectTransactio
 
               <div className="theme-card rounded-3xl divide-y divide-[var(--card-divider)] overflow-hidden shadow-sm">
                 {items.map(tx => {
-                  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(tx.type) || (tx.type === 'ADJUSTMENT' && tx.amount > 0);
+                  const isPositive = ['MONEY_RECEIVED', 'BORROWED_MONEY', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(tx.type) || (tx.type === 'ADJUSTMENT' && tx.amount > 0);
                   const isLending = tx.type === 'LENDING';
+                  const isBorrow = tx.type === 'BORROWED_MONEY';
                   
                   return (
                     <div

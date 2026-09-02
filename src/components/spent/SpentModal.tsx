@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Landmark,
   Banknote,
+  RotateCcw,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { StandardCategory, MoneyLocationId } from '../../types/finance';
@@ -34,10 +35,10 @@ interface SpentModalProps {
   onClose: () => void;
 }
 
-type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'NL';
+type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'REPAY_FRIEND' | 'NL';
 
 export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
-  const { transactions, people, addTransaction, accounts, verifyBalance } = useFinance();
+  const { transactions, people, addTransaction, recordBorrowRepayment, accounts, verifyBalance } = useFinance();
   const [mode, setMode] = useState<Mode>('EXPENSE');
 
   const [amountStr, setAmountStr] = useState<string>('');
@@ -52,6 +53,9 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   const [lendingPersonId, setLendingPersonId] = useState<string>('');
   const [lendingPersonName, setLendingPersonName] = useState<string>('');
   const [expectedDate, setExpectedDate] = useState<string>('');
+
+  const [repayPersonId, setRepayPersonId] = useState<string>('');
+  const [repayPersonName, setRepayPersonName] = useState<string>('');
 
   const [nlText, setNlText] = useState<string>('');
   const [nlError, setNlError] = useState<string>('');
@@ -72,6 +76,8 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
       setSplitFriends([]);
       setLendingPersonId('');
       setLendingPersonName('');
+      setRepayPersonId('');
+      setRepayPersonName('');
       setExpectedDate('');
       setNlText('');
       setNlError('');
@@ -207,6 +213,8 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
             personId: f.personId,
             personName: f.personName,
             amount: friendShares[i],
+            settledAmount: 0,
+            isSettled: false,
           })),
         });
       } else if (mode === 'LENDING') {
@@ -222,10 +230,30 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           category: 'Other',
           personId: lendingPersonId || undefined,
           personName: targetName,
-          expectedDate: expectedDate || undefined,
+          loanDetails: {
+            personId: lendingPersonId || '',
+            personName: targetName,
+            expectedDate: expectedDate || undefined,
+            repaidAmount: 0,
+            isSettled: false,
+          },
           note: note.trim() || undefined,
           accountId: selectedAccountId,
         });
+      } else if (mode === 'REPAY_FRIEND') {
+        const targetName = repayPersonName.trim() || (people.find(p => p.id === repayPersonId)?.name);
+        if (!targetName) {
+          setErrorMsg('Please select the person you are repaying.');
+          return;
+        }
+
+        await recordBorrowRepayment(
+          numericAmount,
+          repayPersonId,
+          targetName,
+          selectedAccountId,
+          note.trim() || undefined
+        );
       }
 
       try {
@@ -258,6 +286,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
               {mode === 'EXPENSE' && 'Record Spending'}
               {mode === 'SPLIT' && 'Friend Split'}
               {mode === 'LENDING' && 'Lend Money'}
+              {mode === 'REPAY_FRIEND' && 'Repay Friend'}
               {mode === 'NL' && 'Natural Language Entry'}
             </h2>
           </div>
@@ -271,11 +300,11 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Mode Selector Tabs */}
-        <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2">
+        <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setMode('EXPENSE')}
-            className={`flex-1 py-2 text-xs font-black rounded-t-xl transition-all ${
+            className={`px-3 py-2 text-xs font-black rounded-t-xl whitespace-nowrap transition-all ${
               mode === 'EXPENSE'
                 ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-rose-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
@@ -286,19 +315,19 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           <button
             type="button"
             onClick={() => setMode('SPLIT')}
-            className={`flex-1 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 transition-all ${
+            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 whitespace-nowrap transition-all ${
               mode === 'SPLIT'
                 ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-indigo-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Friend Split</span>
+            <span>Split</span>
           </button>
           <button
             type="button"
             onClick={() => setMode('LENDING')}
-            className={`flex-1 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 transition-all ${
+            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 whitespace-nowrap transition-all ${
               mode === 'LENDING'
                 ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-amber-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
@@ -306,6 +335,18 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           >
             <HandCoins className="w-3.5 h-3.5" />
             <span>Lend</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('REPAY_FRIEND')}
+            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 whitespace-nowrap transition-all ${
+              mode === 'REPAY_FRIEND'
+                ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-emerald-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Repay</span>
           </button>
           <button
             type="button"
@@ -362,6 +403,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
               {mode === 'EXPENSE' && 'Amount Spent'}
               {mode === 'SPLIT' && 'Total Bill Paid'}
               {mode === 'LENDING' && 'Amount Lent'}
+              {mode === 'REPAY_FRIEND' && 'Amount to Repay'}
             </span>
             <div className="inline-flex items-center justify-center bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-2xl px-4 py-2 focus-within:border-rose-500 transition-colors w-full">
               <span className="text-2xl font-bold text-[var(--card-text-sub)] mr-1.5 font-mono">₹</span>
@@ -627,7 +669,50 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
               </div>
 
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-500 leading-relaxed">
-                💡 <strong>Important:</strong> Money lent is recorded as a receivable and deducted from cash, but does <strong>NOT</strong> count as personal spending.
+                💡 <strong>Important:</strong> Money lent is recorded as an asset owed to you, but does <strong>NOT</strong> count as personal spending.
+              </div>
+            </div>
+          )}
+
+          {mode === 'REPAY_FRIEND' && (
+            <div className="space-y-3 bg-black/5 dark:bg-black/5 p-3.5 rounded-2xl border border-[var(--card-divider)]">
+              <div>
+                <label className="text-xs font-bold text-[var(--card-text-main)] block mb-1.5">Who are you repaying?</label>
+                
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {people.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setRepayPersonId(p.id);
+                        setRepayPersonName(p.name);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center space-x-1 shadow-sm ${
+                        repayPersonName === p.name
+                          ? 'bg-emerald-600 text-white border-emerald-400'
+                          : 'bg-black/5 dark:bg-black/5 border-[var(--card-divider)] text-[var(--card-text-sub)]'
+                      }`}
+                    >
+                      <span>{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="text"
+                  value={repayPersonName}
+                  onChange={e => {
+                    setRepayPersonName(e.target.value);
+                    setRepayPersonId('');
+                  }}
+                  placeholder="Or enter friend's name (e.g. Karthick)"
+                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-emerald-500 shadow-sm"
+                />
+              </div>
+
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-500 leading-relaxed">
+                💡 <strong>Important:</strong> Repaying borrowed money reduces your liability to your friend and deducts from Bank/Cash, but does <strong>NOT</strong> count as personal spending.
               </div>
             </div>
           )}
@@ -662,6 +747,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 {mode === 'EXPENSE' && 'Save Expense'}
                 {mode === 'SPLIT' && 'Save Friend Split'}
                 {mode === 'LENDING' && 'Record Loan'}
+                {mode === 'REPAY_FRIEND' && 'Record Repayment'}
                 {mode === 'NL' && 'Save Transaction'}
               </span>
             </button>

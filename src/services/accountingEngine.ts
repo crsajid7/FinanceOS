@@ -148,18 +148,17 @@ export function computeAccountBalancesFromLedger(
   transactions: Transaction[],
   baseAccounts: Account[] = []
 ): Account[] {
-  // Normalize accounts to strictly Bank and Cash
   let bankBalance = 0;
   let cashBalance = 0;
 
   for (const tx of transactions) {
-    // Determine which account is targeted
     const isBank = tx.accountId === 'acc_bank' || tx.accountId === 'bank' || tx.accountId === 'acc_upi' || tx.accountId === 'upi';
     const isCash = tx.accountId === 'acc_cash' || tx.accountId === 'cash';
 
     switch (tx.type) {
       case 'OPENING_BALANCE':
       case 'MONEY_RECEIVED':
+      case 'BORROWED_MONEY': // User physically receives borrowed cash
       case 'REIMBURSEMENT':
       case 'LOAN_REPAYMENT':
       case 'REFUND':
@@ -170,16 +169,15 @@ export function computeAccountBalancesFromLedger(
       case 'EXPENSE':
       case 'SPLIT':
       case 'LENDING':
+      case 'BORROW_REPAYMENT': // User physically pays back borrowed cash
         if (isBank) bankBalance -= tx.amount;
         else if (isCash) cashBalance -= tx.amount;
         break;
 
       case 'TRANSFER':
-        // Source account loses money
         if (isBank) bankBalance -= tx.amount;
         else if (isCash) cashBalance -= tx.amount;
 
-        // Destination account gains money
         if (tx.toAccountId === 'acc_bank' || tx.toAccountId === 'bank') {
           bankBalance += tx.amount;
         } else if (tx.toAccountId === 'acc_cash' || tx.toAccountId === 'cash') {
@@ -188,7 +186,6 @@ export function computeAccountBalancesFromLedger(
         break;
 
       case 'ADJUSTMENT':
-        // Cash adjustment delta
         if (isBank) bankBalance += tx.amount;
         else if (isCash) cashBalance += tx.amount;
         break;
@@ -216,7 +213,7 @@ export function computeAccountBalancesFromLedger(
 }
 
 /**
- * Checks if an account has sufficient balance before spending/lending/transferring
+ * Checks if an account has sufficient balance before spending/lending/transferring/repaying
  */
 export function checkSufficientBalance(
   accountId: string,
@@ -245,7 +242,7 @@ export function checkSufficientBalance(
 }
 
 /**
- * Calculates Person Balances from transaction ledger (Splits vs Loans)
+ * Calculates Two-Way Person Balances & Single Net Position from transaction ledger
  */
 export function calculateAllPersonBalances(
   transactions: Transaction[],
@@ -256,8 +253,9 @@ export function calculateAllPersonBalances(
     personName: string;
     splitOwed: number;
     loanOwed: number;
+    borrowedOwed: number;
     settledTotal: number;
-    lastDate?: string;
+    lastInteractionDate?: string;
   }>();
 
   // Initialize for all registered people
@@ -267,8 +265,9 @@ export function calculateAllPersonBalances(
       personName: p.name,
       splitOwed: 0,
       loanOwed: 0,
+      borrowedOwed: 0,
       settledTotal: 0,
-      lastDate: undefined,
+      lastInteractionDate: undefined,
     });
   }
 
@@ -288,12 +287,13 @@ export function calculateAllPersonBalances(
             personName: split.personName,
             splitOwed: 0,
             loanOwed: 0,
+            borrowedOwed: 0,
             settledTotal: 0,
           };
           balanceMap.set(split.personId, personData);
         }
         personData.splitOwed += split.amount;
-        personData.lastDate = tx.date;
+        personData.lastInteractionDate = tx.date;
       }
     }
 
@@ -309,51 +309,92 @@ export function calculateAllPersonBalances(
             personName: pname,
             splitOwed: 0,
             loanOwed: 0,
+            borrowedOwed: 0,
             settledTotal: 0,
           };
           balanceMap.set(pid, personData);
         }
         personData.loanOwed += tx.amount;
-        personData.lastDate = tx.date;
+        personData.lastInteractionDate = tx.date;
       }
     }
 
-    // 3. REIMBURSEMENT: Reduces split receivables
+    // 3. BORROWED_MONEY: User borrowed money from person (User liability)
+    if (tx.type === 'BORROWED_MONEY' && tx.personId) {
+      let personData = balanceMap.get(tx.personId);
+      if (!personData) {
+        personData = {
+          personId: tx.personId,
+          personName: tx.personName || 'Friend',
+          splitOwed: 0,
+          loanOwed: 0,
+          borrowedOwed: 0,
+          settledTotal: 0,
+        };
+        balanceMap.set(tx.personId, personData);
+      }
+      personData.borrowedOwed += tx.amount;
+      personData.lastInteractionDate = tx.date;
+    }
+
+    // 4. REIMBURSEMENT: Reduces split receivables
     if (tx.type === 'REIMBURSEMENT' && tx.personId) {
       const personData = balanceMap.get(tx.personId);
       if (personData) {
         personData.splitOwed = Math.max(0, personData.splitOwed - tx.amount);
         personData.settledTotal += tx.amount;
-        personData.lastDate = tx.date;
+        personData.lastInteractionDate = tx.date;
       }
     }
 
-    // 4. LOAN_REPAYMENT: Reduces loan receivables
+    // 5. LOAN_REPAYMENT: Reduces loan receivables
     if (tx.type === 'LOAN_REPAYMENT' && tx.personId) {
       const personData = balanceMap.get(tx.personId);
       if (personData) {
         personData.loanOwed = Math.max(0, personData.loanOwed - tx.amount);
         personData.settledTotal += tx.amount;
-        personData.lastDate = tx.date;
+        personData.lastInteractionDate = tx.date;
+      }
+    }
+
+    // 6. BORROW_REPAYMENT: User repaid borrowed money to person (Reduces user liability)
+    if (tx.type === 'BORROW_REPAYMENT' && tx.personId) {
+      const personData = balanceMap.get(tx.personId);
+      if (personData) {
+        personData.borrowedOwed = Math.max(0, personData.borrowedOwed - tx.amount);
+        personData.settledTotal += tx.amount;
+        personData.lastInteractionDate = tx.date;
       }
     }
   }
 
-  return Array.from(balanceMap.values()).map(p => ({
-    ...p,
-    totalOwed: p.splitOwed + p.loanOwed,
-  }));
+  return Array.from(balanceMap.values()).map(p => {
+    const amountTheyOweMe = p.splitOwed + p.loanOwed;
+    const amountIOweThem = p.borrowedOwed;
+    const netBalance = amountTheyOweMe - amountIOweThem;
+
+    let status: 'THEY_OWE_ME' | 'I_OWE_THEM' | 'SETTLED' = 'SETTLED';
+    if (netBalance > 0) status = 'THEY_OWE_ME';
+    else if (netBalance < 0) status = 'I_OWE_THEM';
+
+    return {
+      personId: p.personId,
+      personName: p.personName,
+      splitOwed: p.splitOwed,
+      loanOwed: p.loanOwed,
+      amountTheyOweMe,
+      borrowedOwed: p.borrowedOwed,
+      amountIOweThem,
+      netBalance,
+      status,
+      settledTotal: p.settledTotal,
+      lastInteractionDate: p.lastInteractionDate,
+    };
+  });
 }
 
 /**
- * Master Financial Overview Calculator
- *
- * Fundamental Equations:
- * 1. Current Money = Bank Balance + Cash Balance
- * 2. Spendable Money = Current Money - Active Reserved Money
- * 3. Total Received = Sum of MONEY_RECEIVED in reporting period (NOT a budget limit!)
- * 4. Personal Spending = Expenses + Split User Share - Refunds in period
- * 5. Receivables (Splits + Loans) are NEVER added to Current Money
+ * Master Financial Overview Calculator with Two-Way Friend Positions
  */
 export function calculateFinancialOverview(
   transactions: Transaction[],
@@ -364,7 +405,7 @@ export function calculateFinancialOverview(
   const dateRange = getReportingDateRange(period, referenceDate);
   const todayStr = formatLocalDate(referenceDate);
 
-  // 1. Current Physical Money (Always authoritative from full transaction history)
+  // 1. Current Physical Money
   const computedAccounts = computeAccountBalancesFromLedger(transactions);
   const bankAccount = computedAccounts.find(a => a.id === 'acc_bank') || computedAccounts[0];
   const cashAccount = computedAccounts.find(a => a.id === 'acc_cash') || computedAccounts[1];
@@ -373,7 +414,7 @@ export function calculateFinancialOverview(
   const cashBalance = cashAccount?.balance || 0;
   const currentMoney = bankBalance + cashBalance;
 
-  // 2. Active Reserved Money (Funds committed for rent, fees, etc.)
+  // 2. Active Reserved Money
   const totalReserved = reservedList
     .filter(r => !r.isFulfilled)
     .reduce((sum, r) => sum + r.amount, 0);
@@ -391,7 +432,9 @@ export function calculateFinancialOverview(
   let totalPaidForOthersInPeriod = 0;
   let totalReimbursedInPeriod = 0;
   let totalMoneyLentInPeriod = 0;
+  let totalMoneyBorrowedInPeriod = 0;
   let totalLoanRepaymentsInPeriod = 0;
+  let totalBorrowRepaymentsInPeriod = 0;
 
   const categoryMap = new Map<string, number>();
 
@@ -407,7 +450,6 @@ export function calculateFinancialOverview(
     const isToday = tx.date === todayStr;
     const isInLast7Days = tx.date >= sevenDaysAgoStr && tx.date <= todayStr;
 
-    // Spending in last 7 days & today
     if (tx.type === 'EXPENSE') {
       if (isToday) todaySpent += tx.amount;
       if (isInLast7Days) last7DaysSpent += tx.amount;
@@ -448,12 +490,20 @@ export function calculateFinancialOverview(
         totalMoneyLentInPeriod += tx.amount;
         break;
 
+      case 'BORROWED_MONEY':
+        totalMoneyBorrowedInPeriod += tx.amount;
+        break;
+
       case 'REIMBURSEMENT':
         totalReimbursedInPeriod += tx.amount;
         break;
 
       case 'LOAN_REPAYMENT':
         totalLoanRepaymentsInPeriod += tx.amount;
+        break;
+
+      case 'BORROW_REPAYMENT':
+        totalBorrowRepaymentsInPeriod += tx.amount;
         break;
 
       case 'REFUND': {
@@ -470,28 +520,20 @@ export function calculateFinancialOverview(
     }
   }
 
-  // Receivables across the entire ledger (All-time outstanding)
-  let totalSplitsAllTime = 0;
-  let totalReimbursedAllTime = 0;
-  let totalLentAllTime = 0;
-  let totalRepaymentsAllTime = 0;
+  // Two-Way Friend Balances Across the Ledger
+  const allPersonBalances = calculateAllPersonBalances(transactions, []);
+  let totalMoneyOwedToYou = 0;
+  let totalMoneyYouOwe = 0;
 
-  for (const tx of transactions) {
-    if (tx.type === 'SPLIT') {
-      const userPortion = typeof tx.userShare === 'number' ? tx.userShare : tx.amount;
-      totalSplitsAllTime += (tx.amount - userPortion);
-    } else if (tx.type === 'REIMBURSEMENT') {
-      totalReimbursedAllTime += tx.amount;
-    } else if (tx.type === 'LENDING') {
-      totalLentAllTime += tx.amount;
-    } else if (tx.type === 'LOAN_REPAYMENT') {
-      totalRepaymentsAllTime += tx.amount;
+  for (const p of allPersonBalances) {
+    if (p.netBalance > 0) {
+      totalMoneyOwedToYou += p.netBalance;
+    } else if (p.netBalance < 0) {
+      totalMoneyYouOwe += Math.abs(p.netBalance);
     }
   }
 
-  const pendingSplitReceivables = Math.max(0, totalSplitsAllTime - totalReimbursedAllTime);
-  const pendingLoanReceivables = Math.max(0, totalLentAllTime - totalRepaymentsAllTime);
-  const totalMoneyOwedToYou = pendingSplitReceivables + pendingLoanReceivables;
+  const netFriendPosition = totalMoneyOwedToYou - totalMoneyYouOwe;
 
   // Category breakdown for reporting period
   const categorySpending = Array.from(categoryMap.entries())
@@ -507,16 +549,18 @@ export function calculateFinancialOverview(
     currentMoney,
     totalReserved,
     spendableMoney,
-    pendingSplitReceivables,
-    pendingLoanReceivables,
     totalMoneyOwedToYou,
+    totalMoneyYouOwe,
+    netFriendPosition,
     periodLabel: dateRange.label,
     totalReceivedInPeriod,
     actualPersonalSpentInPeriod,
     totalPaidForOthersInPeriod,
     totalReimbursedInPeriod,
     totalMoneyLentInPeriod,
+    totalMoneyBorrowedInPeriod,
     totalLoanRepaymentsInPeriod,
+    totalBorrowRepaymentsInPeriod,
     todaySpent,
     last7DaysSpent,
     categorySpending,
@@ -542,7 +586,7 @@ export function generateWhereDidMyMoneyGo(
     ? ` You have set aside ${formatINR(summary.totalReserved)} in reserved funds.`
     : '';
 
-  const summaryParagraph = `During ${summary.periodLabel}, you received ${formatINR(summary.totalReceivedInPeriod)} in total money. You currently have ${formatINR(summary.currentMoney)} in total physical cash (${formatINR(summary.bankBalance)} in Bank, ${formatINR(summary.cashBalance)} in Cash).${reservedText} You personally spent ${formatINR(summary.actualPersonalSpentInPeriod)}, primarily on ${topCatListText}. You paid ${formatINR(summary.totalPaidForOthersInPeriod)} on behalf of friends (${formatINR(summary.totalReimbursedInPeriod)} reimbursed, ${formatINR(summary.pendingSplitReceivables)} still owed) and lent ${formatINR(summary.totalMoneyLentInPeriod)} (${formatINR(summary.pendingLoanReceivables)} currently outstanding). You have ${formatINR(summary.spendableMoney)} spendable money available right now.`;
+  const summaryParagraph = `During ${summary.periodLabel}, you received ${formatINR(summary.totalReceivedInPeriod)} in total money. You currently have ${formatINR(summary.currentMoney)} in total physical cash (${formatINR(summary.bankBalance)} in Bank, ${formatINR(summary.cashBalance)} in Cash).${reservedText} You personally spent ${formatINR(summary.actualPersonalSpentInPeriod)}, primarily on ${topCatListText}. You paid ${formatINR(summary.totalPaidForOthersInPeriod)} on behalf of friends (${formatINR(summary.totalReimbursedInPeriod)} reimbursed) and lent ${formatINR(summary.totalMoneyLentInPeriod)} (${formatINR(summary.totalLoanRepaymentsInPeriod)} repaid). Friends currently owe you ${formatINR(summary.totalMoneyOwedToYou)}, and you owe others ${formatINR(summary.totalMoneyYouOwe)}. You have ${formatINR(summary.spendableMoney)} spendable money available right now.`;
 
   return {
     periodLabel: summary.periodLabel,
@@ -554,10 +598,10 @@ export function generateWhereDidMyMoneyGo(
     topCategories,
     paidForOthers: summary.totalPaidForOthersInPeriod,
     reimbursed: summary.totalReimbursedInPeriod,
-    stillOwedFromSplits: summary.pendingSplitReceivables,
+    stillOwedFromSplits: summary.totalMoneyOwedToYou,
     moneyLent: summary.totalMoneyLentInPeriod,
     repaidLoans: summary.totalLoanRepaymentsInPeriod,
-    stillOutstandingLoans: summary.pendingLoanReceivables,
+    stillOutstandingLoans: summary.totalMoneyYouOwe,
     totalReserved: summary.totalReserved,
     spendableMoney: summary.spendableMoney,
     summaryParagraph,

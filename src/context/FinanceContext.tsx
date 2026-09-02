@@ -1,13 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Transaction,
-  Person,
   Account,
-  FinancialOverviewSummary,
-  PersonBalanceSummary,
-  WhereDidMyMoneyGoReport,
-  TransactionType,
   ReservedMoney,
+  Person,
+  PersonBalanceSummary,
+  FinancialOverviewSummary,
+  WhereDidMyMoneyGoReport,
   ReportingPeriod,
   ExportDataPayload,
   MoneyLocationId,
@@ -19,271 +18,151 @@ import {
   calculateAllPersonBalances,
   generateWhereDidMyMoneyGo,
   computeAccountBalancesFromLedger,
-  checkSufficientBalance,
   formatLocalDate,
+  checkSufficientBalance,
 } from '../services/accountingEngine';
-import {
-  DEMO_PEOPLE,
-  DEMO_ACCOUNTS,
-  getDemoTransactions,
-} from '../db/seedData';
 
-interface AddTransactionPayload {
-  type: TransactionType;
-  amount: number;
-  userShare?: number;
-  category: string;
+export type AddTransactionInput = Omit<Transaction, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'status' | 'date' | 'time'> & {
   date?: string;
   time?: string;
-  note?: string;
-  source?: string;
-  personId?: string;
-  personName?: string;
-  splits?: { personId: string; personName: string; amount: number }[];
-  expectedDate?: string;
-  accountId: MoneyLocationId | string; // 'acc_bank' | 'acc_cash'
-  toAccountId?: MoneyLocationId | string; // For TRANSFER
-  linkedTransactionId?: string;
-}
+};
 
 interface FinanceContextType {
+  // Primary State
+  transactions: Transaction[];
+  accounts: Account[];
+  reservedMoney: ReservedMoney[];
+  people: Person[];
+  personBalances: PersonBalanceSummary[];
+  overview: FinancialOverviewSummary;
+  whereDidMyMoneyGo: WhereDidMyMoneyGoReport;
+
   // Reporting Period
   selectedPeriod: ReportingPeriod;
   setSelectedPeriod: (period: ReportingPeriod) => void;
 
-  // Entities
-  transactions: Transaction[];
-  people: Person[];
-  accounts: Account[];
-  reservedMoney: ReservedMoney[];
-  overview: FinancialOverviewSummary;
-  summary: FinancialOverviewSummary; // Backwards-compatible alias for overview
-  personBalances: PersonBalanceSummary[];
-  whereDidMyMoneyGo: WhereDidMyMoneyGoReport;
-  isLoading: boolean;
-
-  // Actions
-  addTransaction: (payload: AddTransactionPayload) => Promise<Transaction>;
+  // Transaction Operations
+  addTransaction: (tx: AddTransactionInput) => Promise<Transaction>;
   updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
-  addPerson: (name: string, phone?: string) => Promise<Person>;
-  settleFriendSplit: (personId: string, amount: number, accountId?: MoneyLocationId, note?: string) => Promise<void>;
-  recordLoanRepaymentDirect: (personId: string, amount: number, accountId?: MoneyLocationId, note?: string) => Promise<void>;
-  
-  // Transfer
+
+  // Two-Way Friend & Settlement Actions
+  recordBorrowedMoney: (amount: number, personId: string, personName: string, accountId: MoneyLocationId, note?: string, date?: string) => Promise<Transaction>;
+  recordBorrowRepayment: (amount: number, personId: string, personName: string, accountId: MoneyLocationId, note?: string, date?: string) => Promise<Transaction>;
+  recordReimbursement: (amount: number, personId: string, personName: string, accountId: MoneyLocationId, note?: string, date?: string) => Promise<Transaction>;
+  recordLoanRepayment: (amount: number, personId: string, personName: string, accountId: MoneyLocationId, note?: string, date?: string) => Promise<Transaction>;
+
+  // Transfer & Opening Balance
+  transferMoney: (amount: number, fromAccountId: MoneyLocationId, toAccountId: MoneyLocationId, note?: string) => Promise<Transaction>;
   recordTransfer: (amount: number, fromAccountId: MoneyLocationId, toAccountId: MoneyLocationId, note?: string) => Promise<Transaction>;
-  
-  // Opening Balance
+  setOpeningBalance: (bankAmount: number, cashAmount: number) => Promise<void>;
   recordOpeningBalance: (bankAmount: number, cashAmount: number) => Promise<void>;
 
-  // Reserved Money
+  // Cash Adjustment
+  recordCashAdjustment: (actualAmount: number, accountId: MoneyLocationId, reason?: string) => Promise<Transaction>;
+
+  // Reserved Money Operations
   addReservation: (amount: number, purpose: string, dueDate?: string) => Promise<ReservedMoney>;
   toggleReservationFulfilled: (id: string) => Promise<void>;
   deleteReservation: (id: string) => Promise<void>;
 
-  // Cash Adjustment / Reconciliation
-  recordCashAdjustment: (actualAmount: number, accountId: MoneyLocationId, reason?: string) => Promise<Transaction>;
+  // People Operations
+  addPerson: (name: string, phone?: string) => Promise<Person>;
+  deletePerson: (id: string) => Promise<void>;
 
-  // Negative balance checker
+  // Balance Guard Helper
   verifyBalance: (accountId: string, amount: number) => { hasSufficient: boolean; currentBalance: number; missingAmount: number; accountName: string };
 
-  // Backup & Reset
+  // Data Export & Import
   exportAllData: () => Promise<string>;
-  importAllData: (jsonStr: string) => Promise<boolean>;
-  resetDemoData: () => Promise<void>;
+  importAllData: (jsonData: string) => Promise<boolean>;
   clearData: () => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser, isDemoMode } = useAuth();
-  
-  const [selectedPeriod, setSelectedPeriod] = useState<ReportingPeriod>('THIS_MONTH');
+  const { currentUser } = useAuth();
+  const userId = currentUser.id;
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [people, setPeople] = useState<Person[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>(DEMO_ACCOUNTS);
   const [reservedMoney, setReservedMoney] = useState<ReservedMoney[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<ReportingPeriod>('THIS_MONTH');
 
-  // Load user data from IndexedDB
+  // Load user data reactively from Dexie IndexedDB
   const loadUserData = useCallback(async () => {
-    if (!currentUser) return;
-    setIsLoading(true);
     try {
-      const userTx = await db.transactions.where('userId').equals(currentUser.id).toArray();
-      const userPeople = await db.people.where('userId').equals(currentUser.id).toArray();
-      const userReserved = await db.reservedMoney.where('userId').equals(currentUser.id).toArray();
+      const [txList, resList, personList] = await Promise.all([
+        db.transactions.where('userId').equals(userId).toArray(),
+        db.reservedMoney.where('userId').equals(userId).toArray(),
+        db.people.where('userId').equals(userId).toArray(),
+      ]);
 
-      if (isDemoMode && userTx.length === 0 && userPeople.length === 0) {
-        // Seed initial clean state
-        const demoPeople = DEMO_PEOPLE;
-        const demoAccounts = DEMO_ACCOUNTS;
-        const demoTx = getDemoTransactions();
+      // Sort transactions descending by date & time
+      txList.sort((a, b) => {
+        return new Date(`${b.date}T${b.time || '00:00'}`).getTime() - new Date(`${a.date}T${a.time || '00:00'}`).getTime();
+      });
 
-        await db.people.bulkPut(demoPeople);
-        await db.accounts.bulkPut(demoAccounts);
-        await db.transactions.bulkPut(demoTx);
-
-        setPeople(demoPeople);
-        setAccounts(demoAccounts);
-        setTransactions(demoTx);
-        setReservedMoney([]);
-      } else {
-        // Compute exact single-source-of-truth balances from transaction ledger
-        const reconciledAccounts = computeAccountBalancesFromLedger(userTx, DEMO_ACCOUNTS);
-
-        setTransactions(userTx);
-        setPeople(userPeople);
-        setAccounts(reconciledAccounts);
-        setReservedMoney(userReserved);
-      }
+      setTransactions(txList);
+      setReservedMoney(resList);
+      setPeople(personList);
     } catch (err) {
-      console.error('Error loading finance data:', err);
-    } finally {
-      setIsLoading(false);
+      console.error('Failed to load user financial data:', err);
     }
-  }, [currentUser, isDemoMode]);
+  }, [userId]);
 
   useEffect(() => {
     loadUserData();
   }, [loadUserData]);
 
-  // Derived Account Balances (Single source of truth)
-  const computedAccounts = useMemo(() => {
-    return computeAccountBalancesFromLedger(transactions, accounts);
-  }, [transactions, accounts]);
+  // Derived Account Balances (SINGLE SOURCE OF TRUTH FROM LEDGER)
+  const accounts = useMemo(() => {
+    return computeAccountBalancesFromLedger(transactions);
+  }, [transactions]);
 
-  // Master Financial Overview Calculation
-  const overview = useMemo(() => {
-    return calculateFinancialOverview(transactions, reservedMoney, selectedPeriod);
-  }, [transactions, reservedMoney, selectedPeriod]);
-
-  // Reactive Person Balances (Splits vs Loans)
+  // Derived Two-Way Person Balances & Single Net Positions
   const personBalances = useMemo(() => {
     return calculateAllPersonBalances(transactions, people);
   }, [transactions, people]);
 
-  // Reactive Story Report
+  // Derived Master Overview & Where Did My Money Go
+  const overview = useMemo(() => {
+    return calculateFinancialOverview(transactions, reservedMoney, selectedPeriod);
+  }, [transactions, reservedMoney, selectedPeriod]);
+
   const whereDidMyMoneyGo = useMemo(() => {
     return generateWhereDidMyMoneyGo(transactions, reservedMoney, selectedPeriod);
   }, [transactions, reservedMoney, selectedPeriod]);
 
-  // Verify balance before deducting
   const verifyBalance = useCallback((accountId: string, amount: number) => {
-    return checkSufficientBalance(accountId, amount, computedAccounts);
-  }, [computedAccounts]);
-
-  // Add Person
-  const addPerson = async (name: string, phone?: string): Promise<Person> => {
-    const trimmed = name.trim();
-    const existing = people.find(p => p.name.toLowerCase() === trimmed.toLowerCase());
-    if (existing) return existing;
-
-    const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500'];
-    const randomColor = colors[people.length % colors.length];
-
-    const newPerson: Person = {
-      id: `person_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      userId: currentUser.id,
-      name: trimmed,
-      phone,
-      avatarColor: randomColor,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    await db.people.put(newPerson);
-    setPeople(prev => [...prev, newPerson]);
-    return newPerson;
-  };
+    return checkSufficientBalance(accountId, amount, accounts);
+  }, [accounts]);
 
   // Add Transaction
-  const addTransaction = async (payload: AddTransactionPayload): Promise<Transaction> => {
+  const addTransaction = async (
+    txData: AddTransactionInput
+  ): Promise<Transaction> => {
     const now = new Date();
-    const date = payload.date || formatLocalDate(now);
-    const time = payload.time || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    // Normalize account ID to strictly Bank or Cash
-    const targetAccountId: MoneyLocationId = (payload.accountId === 'acc_cash' || payload.accountId === 'cash')
-      ? 'acc_cash'
-      : 'acc_bank';
-
-    const toAccountId: MoneyLocationId | undefined = payload.toAccountId
-      ? (payload.toAccountId === 'acc_cash' || payload.toAccountId === 'cash' ? 'acc_cash' : 'acc_bank')
-      : undefined;
-
-    // Check balance for deducting transactions
-    if (['EXPENSE', 'SPLIT', 'LENDING', 'TRANSFER'].includes(payload.type)) {
-      const check = verifyBalance(targetAccountId, payload.amount);
-      if (!check.hasSufficient) {
-        throw new Error(`Insufficient funds: You only have ₹${check.currentBalance} in ${check.accountName}.`);
-      }
-    }
-
-    // Resolve person if name is provided but no personId
-    let personId = payload.personId;
-    let personName = payload.personName;
-    if (!personId && personName) {
-      const personObj = await addPerson(personName);
-      personId = personObj.id;
-      personName = personObj.name;
-    }
-
-    // Resolve splits
-    const splits = payload.splits?.map(s => ({
-      personId: s.personId,
-      personName: s.personName,
-      amount: s.amount,
-      settledAmount: 0,
-      isSettled: false,
-    }));
-
     const newTx: Transaction = {
-      id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      userId: currentUser.id,
-      type: payload.type,
-      amount: payload.amount,
-      userShare: payload.userShare,
-      category: payload.category || 'Other',
-      date,
-      time,
-      note: payload.note,
-      source: payload.source,
-      personId,
-      personName,
-      splits,
-      loanDetails: payload.type === 'LENDING' && personId ? {
-        personId,
-        personName: personName || 'Friend',
-        expectedDate: payload.expectedDate,
-        repaidAmount: 0,
-        isSettled: false,
-      } : undefined,
-      accountId: targetAccountId,
-      toAccountId,
+      ...txData,
+      id: `tx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      userId,
+      date: txData.date || formatLocalDate(now),
+      time: txData.time || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
       status: 'ACTIVE',
-      linkedTransactionId: payload.linkedTransactionId,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now.getTime(),
+      updatedAt: now.getTime(),
     };
 
-    const nextTransactions = [newTx, ...transactions];
-    const nextAccounts = computeAccountBalancesFromLedger(nextTransactions, accounts);
-
-    await db.transactions.put(newTx);
-    for (const acc of nextAccounts) {
-      await db.accounts.put(acc);
-    }
-
-    setTransactions(nextTransactions);
-    setAccounts(nextAccounts);
+    await db.transactions.add(newTx);
+    await loadUserData();
     return newTx;
   };
 
-  // Update Transaction with 100% Reversible Accounting Effect
+  // Update Transaction
   const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
-    const existing = transactions.find(t => t.id === id);
+    const existing = await db.transactions.get(id);
     if (!existing) return;
 
     const updatedTx: Transaction = {
@@ -292,214 +171,271 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updatedAt: Date.now(),
     };
 
-    const nextTransactions = transactions.map(t => (t.id === id ? updatedTx : t));
-    const nextAccounts = computeAccountBalancesFromLedger(nextTransactions, accounts);
-
     await db.transactions.put(updatedTx);
-    for (const acc of nextAccounts) {
-      await db.accounts.put(acc);
-    }
-
-    setTransactions(nextTransactions);
-    setAccounts(nextAccounts);
+    await loadUserData();
   };
 
-  // Delete Transaction with 100% Reversible Accounting Effect
+  // Delete Transaction
   const deleteTransaction = async (id: string) => {
-    const nextTransactions = transactions.filter(t => t.id !== id);
-    const nextAccounts = computeAccountBalancesFromLedger(nextTransactions, accounts);
-
     await db.transactions.delete(id);
-    for (const acc of nextAccounts) {
-      await db.accounts.put(acc);
-    }
-
-    setTransactions(nextTransactions);
-    setAccounts(nextAccounts);
+    await loadUserData();
   };
 
-  // Record Transfer Between Bank and Cash
-  const recordTransfer = async (
+  // 1. Record Borrowed Money
+  const recordBorrowedMoney = async (
+    amount: number,
+    personId: string,
+    personName: string,
+    accountId: MoneyLocationId,
+    note?: string,
+    date?: string
+  ): Promise<Transaction> => {
+    return addTransaction({
+      type: 'BORROWED_MONEY',
+      amount,
+      category: 'Other',
+      personId,
+      personName,
+      accountId,
+      note: note || `Borrowed from ${personName}`,
+      date: date || formatLocalDate(),
+      time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+    });
+  };
+
+  // 2. Record Borrow Repayment
+  const recordBorrowRepayment = async (
+    amount: number,
+    personId: string,
+    personName: string,
+    accountId: MoneyLocationId,
+    note?: string,
+    date?: string
+  ): Promise<Transaction> => {
+    return addTransaction({
+      type: 'BORROW_REPAYMENT',
+      amount,
+      category: 'Other',
+      personId,
+      personName,
+      accountId,
+      note: note || `Repaid borrowed money to ${personName}`,
+      date: date || formatLocalDate(),
+      time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+    });
+  };
+
+  // 3. Record Reimbursement
+  const recordReimbursement = async (
+    amount: number,
+    personId: string,
+    personName: string,
+    accountId: MoneyLocationId,
+    note?: string,
+    date?: string
+  ): Promise<Transaction> => {
+    return addTransaction({
+      type: 'REIMBURSEMENT',
+      amount,
+      category: 'Other',
+      personId,
+      personName,
+      accountId,
+      note: note || `Split reimbursement from ${personName}`,
+      date: date || formatLocalDate(),
+      time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+    });
+  };
+
+  // 4. Record Loan Repayment
+  const recordLoanRepayment = async (
+    amount: number,
+    personId: string,
+    personName: string,
+    accountId: MoneyLocationId,
+    note?: string,
+    date?: string
+  ): Promise<Transaction> => {
+    return addTransaction({
+      type: 'LOAN_REPAYMENT',
+      amount,
+      category: 'Other',
+      personId,
+      personName,
+      accountId,
+      note: note || `Loan repayment from ${personName}`,
+      date: date || formatLocalDate(),
+      time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
+    });
+  };
+
+  // Transfer Money between Bank and Cash
+  const transferMoney = async (
     amount: number,
     fromAccountId: MoneyLocationId,
     toAccountId: MoneyLocationId,
     note?: string
   ): Promise<Transaction> => {
-    return await addTransaction({
+    return addTransaction({
       type: 'TRANSFER',
       amount,
       category: 'Other',
       accountId: fromAccountId,
-      toAccountId: toAccountId,
-      note: note || `Transfer: ${fromAccountId === 'acc_bank' ? 'Bank → Cash' : 'Cash → Bank'}`,
+      toAccountId,
+      note: note || `Transfer: ${fromAccountId === 'acc_bank' ? 'Bank to Cash' : 'Cash to Bank'}`,
+      date: formatLocalDate(),
+      time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
     });
   };
 
-  // Record Opening Balance for user starting with existing money
-  const recordOpeningBalance = async (bankAmount: number, cashAmount: number) => {
-    const today = formatLocalDate(new Date());
+  // Set Opening Balance
+  const setOpeningBalance = async (bankAmount: number, cashAmount: number) => {
+    const existingOpeningTxs = await db.transactions
+      .where('userId')
+      .equals(userId)
+      .filter(tx => tx.type === 'OPENING_BALANCE')
+      .toArray();
+
+    for (const tx of existingOpeningTxs) {
+      await db.transactions.delete(tx.id);
+    }
+
     if (bankAmount > 0) {
       await addTransaction({
         type: 'OPENING_BALANCE',
         amount: bankAmount,
         category: 'Other',
         accountId: 'acc_bank',
-        date: today,
-        note: 'Starting Bank Balance',
+        note: 'Starting Bank balance',
+        date: formatLocalDate(),
+        time: '00:00',
       });
     }
+
     if (cashAmount > 0) {
       await addTransaction({
         type: 'OPENING_BALANCE',
         amount: cashAmount,
         category: 'Other',
         accountId: 'acc_cash',
-        date: today,
-        note: 'Starting Cash Balance',
+        note: 'Starting Cash in Hand',
+        date: formatLocalDate(),
+        time: '00:00',
       });
     }
   };
 
-  // Settle Friend Split
-  const settleFriendSplit = async (
-    personId: string,
-    amount: number,
-    accountId: MoneyLocationId = 'acc_bank',
-    note?: string
-  ) => {
-    const person = people.find(p => p.id === personId);
-    if (!person) return;
-
-    await addTransaction({
-      type: 'REIMBURSEMENT',
-      amount,
-      category: 'Other',
-      accountId,
-      personId,
-      personName: person.name,
-      note: note || `Reimbursement from ${person.name}`,
-    });
-  };
-
-  // Record Loan Repayment
-  const recordLoanRepaymentDirect = async (
-    personId: string,
-    amount: number,
-    accountId: MoneyLocationId = 'acc_bank',
-    note?: string
-  ) => {
-    const person = people.find(p => p.id === personId);
-    if (!person) return;
-
-    await addTransaction({
-      type: 'LOAN_REPAYMENT',
-      amount,
-      category: 'Other',
-      accountId,
-      personId,
-      personName: person.name,
-      note: note || `Loan repaid by ${person.name}`,
-    });
-  };
-
-  // Reserved Money: Add reservation
-  const addReservation = async (amount: number, purpose: string, dueDate?: string): Promise<ReservedMoney> => {
-    const newReservation: ReservedMoney = {
-      id: `res_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      userId: currentUser.id,
-      amount,
-      purpose: purpose.trim(),
-      dueDate,
-      isFulfilled: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    await db.reservedMoney.put(newReservation);
-    setReservedMoney(prev => [newReservation, ...prev]);
-    return newReservation;
-  };
-
-  // Reserved Money: Toggle fulfilled
-  const toggleReservationFulfilled = async (id: string) => {
-    const existing = reservedMoney.find(r => r.id === id);
-    if (!existing) return;
-
-    const nextState = !existing.isFulfilled;
-    const updated: ReservedMoney = {
-      ...existing,
-      isFulfilled: nextState,
-      fulfilledDate: nextState ? formatLocalDate(new Date()) : undefined,
-      updatedAt: Date.now(),
-    };
-
-    await db.reservedMoney.put(updated);
-    setReservedMoney(prev => prev.map(r => (r.id === id ? updated : r)));
-  };
-
-  // Reserved Money: Delete
-  const deleteReservation = async (id: string) => {
-    await db.reservedMoney.delete(id);
-    setReservedMoney(prev => prev.filter(r => r.id !== id));
-  };
-
-  // Record Cash Adjustment / Missing Money Reconciliation
+  // Record Cash Adjustment
   const recordCashAdjustment = async (
     actualAmount: number,
     accountId: MoneyLocationId,
     reason?: string
   ): Promise<Transaction> => {
-    const targetAccount = computedAccounts.find(a => a.id === accountId) || computedAccounts[0];
-    const currentBalance = targetAccount?.balance || 0;
-    const delta = actualAmount - currentBalance;
+    const acc = accounts.find(a => a.id === accountId) || accounts[0];
+    const diff = actualAmount - acc.balance;
 
-    return await addTransaction({
+    return addTransaction({
       type: 'ADJUSTMENT',
-      amount: delta,
+      amount: diff,
       category: 'Other',
       accountId,
-      note: reason?.trim() || `Balance adjustment to ${actualAmount} (diff: ${delta >= 0 ? '+' : ''}${delta})`,
+      note: reason || `Cash reconciliation: adjusted by ${diff >= 0 ? '+' : ''}${diff}`,
+      date: formatLocalDate(),
+      time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
     });
   };
 
-  // Export all data as JSON
-  const exportAllData = async (): Promise<string> => {
-    const userTx = await db.transactions.where('userId').equals(currentUser.id).toArray();
-    const userPeople = await db.people.where('userId').equals(currentUser.id).toArray();
-    const userAccounts = await db.accounts.where('userId').equals(currentUser.id).toArray();
-    const userReserved = await db.reservedMoney.where('userId').equals(currentUser.id).toArray();
+  // Add Reservation
+  const addReservation = async (
+    amount: number,
+    purpose: string,
+    dueDate?: string
+  ): Promise<ReservedMoney> => {
+    const newRes: ReservedMoney = {
+      id: `res_${Date.now()}`,
+      userId,
+      amount,
+      purpose,
+      dueDate,
+      isFulfilled: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await db.reservedMoney.add(newRes);
+    await loadUserData();
+    return newRes;
+  };
 
+  const toggleReservationFulfilled = async (id: string) => {
+    const res = await db.reservedMoney.get(id);
+    if (!res) return;
+    await db.reservedMoney.update(id, {
+      isFulfilled: !res.isFulfilled,
+      fulfilledDate: !res.isFulfilled ? formatLocalDate() : undefined,
+      updatedAt: Date.now(),
+    });
+    await loadUserData();
+  };
+
+  const deleteReservation = async (id: string) => {
+    await db.reservedMoney.delete(id);
+    await loadUserData();
+  };
+
+  // Add Person
+  const addPerson = async (name: string, phone?: string): Promise<Person> => {
+    const newP: Person = {
+      id: `person_${Date.now()}`,
+      userId,
+      name,
+      phone,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await db.people.add(newP);
+    await loadUserData();
+    return newP;
+  };
+
+  const deletePerson = async (id: string) => {
+    await db.people.delete(id);
+    await loadUserData();
+  };
+
+  // Export All Data
+  const exportAllData = async (): Promise<string> => {
     const payload: ExportDataPayload = {
       version: 3,
       exportedAt: new Date().toISOString(),
       user: currentUser,
-      accounts: userAccounts,
-      transactions: userTx,
-      people: userPeople,
-      reservedMoney: userReserved,
+      accounts,
+      transactions,
+      people,
+      reservedMoney,
     };
-
     return JSON.stringify(payload, null, 2);
   };
 
-  // Import and validate backup JSON
-  const importAllData = async (jsonStr: string): Promise<boolean> => {
+  // Import All Data
+  const importAllData = async (jsonData: string): Promise<boolean> => {
     try {
-      const parsed: ExportDataPayload = JSON.parse(jsonStr);
-      if (!parsed || !Array.isArray(parsed.transactions)) {
-        throw new Error('Invalid backup file format.');
+      const parsed = JSON.parse(jsonData) as ExportDataPayload;
+      if (!parsed.user || !Array.isArray(parsed.transactions)) {
+        return false;
       }
 
-      await clearData();
+      await db.transactions.where('userId').equals(userId).delete();
+      await db.people.where('userId').equals(userId).delete();
+      await db.reservedMoney.where('userId').equals(userId).delete();
 
+      if (parsed.transactions.length > 0) {
+        await db.transactions.bulkAdd(parsed.transactions.map(t => ({ ...t, userId })));
+      }
       if (parsed.people && parsed.people.length > 0) {
-        await db.people.bulkPut(parsed.people.map(p => ({ ...p, userId: currentUser.id })));
-      }
-      if (parsed.transactions && parsed.transactions.length > 0) {
-        await db.transactions.bulkPut(parsed.transactions.map(t => ({ ...t, userId: currentUser.id })));
+        await db.people.bulkAdd(parsed.people.map(p => ({ ...p, userId })));
       }
       if (parsed.reservedMoney && parsed.reservedMoney.length > 0) {
-        await db.reservedMoney.bulkPut(parsed.reservedMoney.map(r => ({ ...r, userId: currentUser.id })));
+        await db.reservedMoney.bulkAdd(parsed.reservedMoney.map(r => ({ ...r, userId })));
       }
 
       await loadUserData();
@@ -510,77 +446,46 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Reset Demo Data
-  const resetDemoData = async () => {
-    setIsLoading(true);
-    try {
-      await db.transactions.where('userId').equals(currentUser.id).delete();
-      await db.people.where('userId').equals(currentUser.id).delete();
-      await db.accounts.where('userId').equals(currentUser.id).delete();
-      await db.reservedMoney.where('userId').equals(currentUser.id).delete();
-
-      const demoPeople = DEMO_PEOPLE;
-      const demoAccounts = DEMO_ACCOUNTS;
-      const demoTx = getDemoTransactions();
-
-      await db.people.bulkPut(demoPeople);
-      await db.accounts.bulkPut(demoAccounts);
-      await db.transactions.bulkPut(demoTx);
-
-      setPeople(demoPeople);
-      setAccounts(demoAccounts);
-      setTransactions(demoTx);
-      setReservedMoney([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Clear all data
+  // Reset to Zero
   const clearData = async () => {
-    await db.transactions.where('userId').equals(currentUser.id).delete();
-    await db.people.where('userId').equals(currentUser.id).delete();
-    await db.reservedMoney.where('userId').equals(currentUser.id).delete();
-    setTransactions([]);
-    setPeople([]);
-    setReservedMoney([]);
-    const resetAccounts = DEMO_ACCOUNTS.map(a => ({ ...a, balance: 0 }));
-    for (const a of resetAccounts) {
-      await db.accounts.put(a);
-    }
-    setAccounts(resetAccounts);
+    await db.transactions.where('userId').equals(userId).delete();
+    await db.people.where('userId').equals(userId).delete();
+    await db.reservedMoney.where('userId').equals(userId).delete();
+    await loadUserData();
   };
 
   return (
     <FinanceContext.Provider
       value={{
+        transactions,
+        accounts,
+        reservedMoney,
+        people,
+        personBalances,
+        overview,
+        whereDidMyMoneyGo,
         selectedPeriod,
         setSelectedPeriod,
-        transactions,
-        people,
-        accounts: computedAccounts,
-        reservedMoney,
-        overview,
-        summary: overview,
-        personBalances,
-        whereDidMyMoneyGo,
-        isLoading,
         addTransaction,
         updateTransaction,
         deleteTransaction,
-        addPerson,
-        settleFriendSplit,
-        recordLoanRepaymentDirect,
-        recordTransfer,
-        recordOpeningBalance,
+        recordBorrowedMoney,
+        recordBorrowRepayment,
+        recordReimbursement,
+        recordLoanRepayment,
+        transferMoney,
+        recordTransfer: transferMoney,
+        setOpeningBalance,
+        recordOpeningBalance: setOpeningBalance,
+        recordCashAdjustment,
         addReservation,
         toggleReservationFulfilled,
         deleteReservation,
-        recordCashAdjustment,
+        addPerson,
+        deletePerson,
         verifyBalance,
         exportAllData,
         importAllData,
-        resetDemoData,
         clearData,
       }}
     >

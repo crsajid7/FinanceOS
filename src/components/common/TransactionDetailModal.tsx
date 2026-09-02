@@ -10,6 +10,8 @@ import {
   Banknote,
   Scale,
   ArrowRightLeft,
+  ArrowDownLeft,
+  RotateCcw,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { Transaction, MoneyLocationId } from '../../types/finance';
@@ -24,7 +26,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   transaction,
   onClose,
 }) => {
-  const { deleteTransaction, updateTransaction, verifyBalance } = useFinance();
+  const { deleteTransaction, updateTransaction } = useFinance();
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
   const [amountStr, setAmountStr] = useState<string>('');
@@ -94,7 +96,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     }
   };
 
-  const isPositive = ['MONEY_RECEIVED', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(transaction.type);
+  const isPositive = ['MONEY_RECEIVED', 'BORROWED_MONEY', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(transaction.type);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in">
@@ -131,7 +133,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 {isPositive ? '+' : transaction.type === 'TRANSFER' ? '' : '−'} {formatINR(transaction.amount)}
               </span>
               <span className="text-xs font-bold uppercase text-[var(--card-text-sub)] block mt-1 font-mono">
-                {transaction.type.replace('_', ' ')}
+                {transaction.type.replace(/_/g, ' ')}
               </span>
             </div>
 
@@ -188,6 +190,22 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               {transaction.type === 'LENDING' && transaction.personName && (
                 <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs font-mono-num text-amber-500 flex items-center justify-between font-mono">
                   <span>Lent to {transaction.personName}</span>
+                  <span className="font-bold">{formatINR(transaction.amount)}</span>
+                </div>
+              )}
+
+              {/* Borrowed Details */}
+              {transaction.type === 'BORROWED_MONEY' && transaction.personName && (
+                <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs font-mono-num text-rose-500 flex items-center justify-between font-mono">
+                  <span>Borrowed from {transaction.personName}</span>
+                  <span className="font-bold">{formatINR(transaction.amount)}</span>
+                </div>
+              )}
+
+              {/* Borrow Repayment Details */}
+              {transaction.type === 'BORROW_REPAYMENT' && transaction.personName && (
+                <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs font-mono-num text-emerald-500 flex items-center justify-between font-mono">
+                  <span>Repaid to {transaction.personName}</span>
                   <span className="font-bold">{formatINR(transaction.amount)}</span>
                 </div>
               )}

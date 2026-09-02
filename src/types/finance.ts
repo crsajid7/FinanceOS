@@ -4,8 +4,10 @@ export type TransactionType =
   | 'EXPENSE'
   | 'SPLIT'
   | 'LENDING'
+  | 'BORROWED_MONEY'
   | 'REIMBURSEMENT'
   | 'LOAN_REPAYMENT'
+  | 'BORROW_REPAYMENT'
   | 'REFUND'
   | 'TRANSFER'
   | 'ADJUSTMENT';
@@ -53,8 +55,8 @@ export interface Transaction {
   time: string; // HH:mm (24h)
   note?: string;
   
-  // Person references
-  personId?: string; // For LENDING, REIMBURSEMENT, LOAN_REPAYMENT
+  // Person references (For LENDING, BORROWED_MONEY, REIMBURSEMENT, LOAN_REPAYMENT, BORROW_REPAYMENT)
+  personId?: string;
   personName?: string;
   
   // Multiple split details
@@ -69,7 +71,7 @@ export interface Transaction {
   
   // Metadata & Links
   status: TransactionStatus;
-  linkedTransactionId?: string; // Links repayment/reimbursement back to original loan/split
+  linkedTransactionId?: string; // Links repayment/reimbursement back to original loan/split/borrow
   source?: string; // e.g. Dad, Mom, Salary for MONEY_RECEIVED
   
   createdAt: number;
@@ -118,9 +120,20 @@ export interface UserProfile {
 export interface PersonBalanceSummary {
   personId: string;
   personName: string;
+  
+  // Receivables (what they owe me)
   splitOwed: number; // Owed from shared expenses
   loanOwed: number;  // Owed from direct loans
-  totalOwed: number; // splitOwed + loanOwed
+  amountTheyOweMe: number; // splitOwed + loanOwed
+  
+  // Liabilities (what I owe them)
+  borrowedOwed: number; // Unrepaid borrowed money
+  amountIOweThem: number; // borrowedOwed
+  
+  // Single Net Relationship Position
+  netBalance: number; // amountTheyOweMe - amountIOweThem (+ve: they owe me, -ve: I owe them, 0: settled)
+  status: 'THEY_OWE_ME' | 'I_OWE_THEM' | 'SETTLED';
+  
   settledTotal: number;
   lastInteractionDate?: string;
 }
@@ -145,19 +158,21 @@ export interface FinancialOverviewSummary {
   totalReserved: number;
   spendableMoney: number; // currentMoney - totalReserved
   
-  // Receivables (NOT in current money)
-  pendingSplitReceivables: number;
-  pendingLoanReceivables: number;
-  totalMoneyOwedToYou: number;
+  // Two-Way Friend Balances Summary (NOT in current money)
+  totalMoneyOwedToYou: number; // Sum of what friends owe you
+  totalMoneyYouOwe: number;    // Sum of what you owe friends
+  netFriendPosition: number;   // totalMoneyOwedToYou - totalMoneyYouOwe
   
   // Period flows (e.g. This Month)
   periodLabel: string;
-  totalReceivedInPeriod: number; // Actual inflows during period (excludes opening balances)
+  totalReceivedInPeriod: number; // Actual earned/received inflows (excludes borrowed money and opening balances)
   actualPersonalSpentInPeriod: number;
   totalPaidForOthersInPeriod: number;
   totalReimbursedInPeriod: number;
   totalMoneyLentInPeriod: number;
+  totalMoneyBorrowedInPeriod: number;
   totalLoanRepaymentsInPeriod: number;
+  totalBorrowRepaymentsInPeriod: number;
   
   // Today and Rolling 7 Days
   todaySpent: number;

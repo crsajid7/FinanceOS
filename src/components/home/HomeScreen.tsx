@@ -186,7 +186,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               {formatINR(overview.totalMoneyOwedToYou)}
             </span>
             <span className="text-[10px] text-[var(--card-text-dim)] mt-0.5 block font-mono">
-              Splits ({formatINR(overview.pendingSplitReceivables)}) · Loans ({formatINR(overview.pendingLoanReceivables)})
+              Net: {formatINR(overview.netFriendPosition)} (You owe {formatINR(overview.totalMoneyYouOwe)})
             </span>
           </div>
         </div>

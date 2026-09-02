@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider } from './context/AuthContext';
-import { FinanceProvider, useFinance } from './context/FinanceContext';
+import { FinanceProvider } from './context/FinanceContext';
 import { AppShell, TabType } from './components/layout/AppShell';
 import { HomeScreen } from './components/home/HomeScreen';
 import { HistoryScreen } from './components/history/HistoryScreen';
@@ -14,8 +14,6 @@ import { ProfileModal } from './components/profile/ProfileModal';
 import { Transaction } from './types/finance';
 
 const MainAppContent: React.FC = () => {
-  const { isLoading } = useFinance();
-
   // Navigation State
   const [currentTab, setCurrentTab] = useState<TabType>('home');
 
@@ -28,47 +26,18 @@ const MainAppContent: React.FC = () => {
   // Detail Modal
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  // Preselected Person for Money Modal (from People Screen Settle Action)
-  const [moneyPreselect, setMoneyPreselect] = useState<{
-    personId?: string;
-    type?: 'REIMBURSEMENT' | 'LOAN_REPAYMENT';
-  }>({});
-
-  const handleRecordPersonPayment = (personId: string, type: 'REIMBURSEMENT' | 'LOAN_REPAYMENT') => {
-    setMoneyPreselect({ personId, type });
-    setIsMoneyOpen(true);
-  };
-
-  const handleOpenMoneyStandard = () => {
-    setMoneyPreselect({});
-    setIsMoneyOpen(true);
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#090d16] flex items-center justify-center text-white">
-        <div className="flex flex-col items-center space-y-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center font-bold text-lg animate-pulse">
-            ₹
-          </div>
-          <span className="text-xs text-slate-400 font-medium">Opening your money diary...</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <AppShell
       currentTab={currentTab}
       onTabChange={setCurrentTab}
       onOpenSpent={() => setIsSpentOpen(true)}
-      onOpenMoney={handleOpenMoneyStandard}
+      onOpenMoney={() => setIsMoneyOpen(true)}
       onOpenProfile={() => setIsProfileOpen(true)}
     >
       {currentTab === 'home' && (
         <HomeScreen
           onOpenSpent={() => setIsSpentOpen(true)}
-          onOpenMoney={handleOpenMoneyStandard}
+          onOpenMoney={() => setIsMoneyOpen(true)}
           onOpenWhereDidMoneyGo={() => setIsWhereDidMoneyGoOpen(true)}
           onNavigateToPeople={() => setCurrentTab('people')}
           onNavigateToHistory={() => setCurrentTab('history')}
@@ -82,9 +51,7 @@ const MainAppContent: React.FC = () => {
       )}
 
       {currentTab === 'people' && (
-        <PeopleScreen
-          onRecordPayment={handleRecordPersonPayment}
-        />
+        <PeopleScreen />
       )}
 
       {currentTab === 'month' && (
@@ -101,12 +68,7 @@ const MainAppContent: React.FC = () => {
 
       <MoneyModal
         isOpen={isMoneyOpen}
-        onClose={() => {
-          setIsMoneyOpen(false);
-          setMoneyPreselect({});
-        }}
-        preselectedPersonId={moneyPreselect.personId}
-        preselectedType={moneyPreselect.type}
+        onClose={() => setIsMoneyOpen(false)}
       />
 
       <WhereDidMyMoneyGoModal
