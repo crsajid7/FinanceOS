@@ -19,9 +19,9 @@ export const WalletCard: React.FC<WalletCardProps> = ({ onOpenTransfer }) => {
       {/* Header */}
       <div className="flex items-center justify-between pb-2 border-b border-[var(--card-divider)]">
         <div>
-          <span className="text-xs font-bold text-[var(--card-text-main)] block">
+          <h2 className="text-sm sm:text-base font-black tracking-tight text-[var(--card-text-main)]">
             Where your money is right now
-          </span>
+          </h2>
         </div>
 
         {onOpenTransfer && (
