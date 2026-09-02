@@ -42,29 +42,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const recentTransactions = transactions.slice(0, 4);
 
+  // Dynamic local date formatting: e.g. "Wednesday, 2 Sep"
+  const today = new Date();
+  const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
+  const dayNum = today.getDate();
+  const monthName = today.toLocaleDateString('en-US', { month: 'short' });
+  const dateDisplay = `${dayName}, ${dayNum} ${monthName}`;
+
   return (
     <div className="space-y-5 pb-28 max-w-2xl mx-auto">
       
-      {/* 1. Header: Greeting & Quick Starting Balance Setup */}
-      <div className="flex items-center justify-between pt-1">
+      {/* 1. Header: Greeting & Dynamic Local Date */}
+      <div className="flex items-start justify-between pt-1">
         <div>
-          <span className="text-[11px] font-bold text-[var(--page-subtitle)] uppercase tracking-wider block font-mono">
-            FINANCEOS · STUDENT MONEY DIARY
+          <span className="text-xs font-semibold text-[var(--page-subtitle)] block mb-0.5">
+            Hi
           </span>
           <h1 className="text-xl font-black tracking-tight text-[var(--page-title)]">
             {currentUser.name}
           </h1>
         </div>
 
-        {transactions.length === 0 && (
-          <button
-            onClick={() => setShowOpeningModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-2xl theme-card text-xs font-mono font-bold hover:border-indigo-500 transition-colors shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Set Starting Cash</span>
-          </button>
-        )}
+        <div className="flex flex-col items-end space-y-1.5">
+          <span className="text-xs font-semibold text-[var(--page-subtitle)] font-mono">
+            {dateDisplay}
+          </span>
+          {transactions.length === 0 && (
+            <button
+              onClick={() => setShowOpeningModal(true)}
+              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl theme-card text-[11px] font-mono font-bold hover:border-indigo-500 transition-colors shadow-sm"
+            >
+              <Sparkles className="w-3 h-3 text-indigo-500" />
+              <span>Set Starting Cash</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 2. Primary Spendable Money Hero Card */}
