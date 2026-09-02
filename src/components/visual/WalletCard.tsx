@@ -19,9 +19,6 @@ export const WalletCard: React.FC<WalletCardProps> = ({ onOpenTransfer }) => {
       {/* Header */}
       <div className="flex items-center justify-between pb-2 border-b border-[var(--card-divider)]">
         <div>
-          <span className="text-[10px] font-black uppercase tracking-widest font-mono text-[var(--card-text-sub)] block">
-            YOUR PHYSICAL MONEY
-          </span>
           <span className="text-xs font-bold text-[var(--card-text-main)] block">
             Where your money is right now
           </span>
@@ -63,10 +60,10 @@ export const WalletCard: React.FC<WalletCardProps> = ({ onOpenTransfer }) => {
         </div>
       </div>
 
-      {/* Total Physical Money Footer */}
+      {/* Total Money in Possession Footer */}
       <div className="flex items-center justify-between pt-2 border-t border-[var(--card-divider)]">
         <span className="text-xs font-black uppercase text-[var(--card-text-sub)] font-mono">
-          TOTAL PHYSICAL MONEY
+          TOTAL MONEY IN POSSESSION
         </span>
         <span className="text-xl sm:text-2xl font-black font-mono-num text-[var(--card-text-main)]">
           {formatINR(overview.currentMoney)}
