@@ -651,17 +651,47 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                   <input
                     type="text"
                     tabIndex={-1}
+                    enterKeyHint="done"
                     value={newFriendName}
                     onChange={e => setNewFriendName(e.target.value)}
                     onFocus={e => {
-                      if (isDismissingAmountRef.current) e.target.blur();
+                      if (isDismissingAmountRef.current) {
+                        e.target.blur();
+                        return;
+                      }
+                      setTimeout(() => {
+                        e.target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                      }, 250);
                     }}
                     onKeyDown={async e => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
                         e.preventDefault();
-                        if (newFriendName.trim()) {
-                          await handleAddSplitFriend('', newFriendName.trim());
-                          setNewFriendName('');
+                        e.stopPropagation();
+                        const nameToAdd = newFriendName.trim();
+                        setNewFriendName('');
+                        e.currentTarget.blur();
+                        if (nameToAdd) {
+                          await handleAddSplitFriend('', nameToAdd);
+                        }
+                      }
+                    }}
+                    onKeyUp={e => {
+                      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    onBeforeInput={async (e: React.FormEvent<HTMLInputElement>) => {
+                      const nativeEvent = e.nativeEvent as InputEvent;
+                      if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                        e.preventDefault();
+                        const inputEl = e.currentTarget as HTMLInputElement;
+                        const nameToAdd = newFriendName.trim();
+                        setNewFriendName('');
+                        inputEl.blur();
+                        if (nameToAdd) {
+                          await handleAddSplitFriend('', nameToAdd);
                         }
                       }
                     }}
@@ -671,9 +701,10 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                   <button
                     type="button"
                     onClick={async () => {
-                      if (newFriendName.trim()) {
-                        await handleAddSplitFriend('', newFriendName.trim());
+                      const nameToAdd = newFriendName.trim();
+                      if (nameToAdd) {
                         setNewFriendName('');
+                        await handleAddSplitFriend('', nameToAdd);
                       }
                     }}
                     className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm"
