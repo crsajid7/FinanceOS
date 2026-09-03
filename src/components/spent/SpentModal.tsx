@@ -66,6 +66,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const nlInputRef = useRef<HTMLInputElement>(null);
+  const isDismissingAmountRef = useRef<boolean>(false);
 
   const numericAmount = parseFloat(amountStr) || 0;
 
@@ -384,6 +385,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 <input
                   ref={nlInputRef}
                   type="text"
+                  tabIndex={-1}
                   value={nlText}
                   onChange={e => setNlText(e.target.value)}
                   placeholder="e.g. Spent 50 on food, or Paid 200 for food 100 was Karthick's"
@@ -414,17 +416,41 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
               <span className="text-2xl font-bold text-[var(--card-text-sub)] mr-1.5 font-mono">₹</span>
               <input
                 ref={amountInputRef}
-                type="number"
-                step="any"
+                type="text"
                 inputMode="decimal"
                 enterKeyHint="done"
                 value={amountStr}
-                onChange={e => setAmountStr(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                    setAmountStr(val);
+                  }
+                }}
                 onKeyDown={e => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                    isDismissingAmountRef.current = true;
                     e.preventDefault();
                     e.stopPropagation();
                     e.currentTarget.blur();
+                    setTimeout(() => { isDismissingAmountRef.current = false; }, 400);
+                  }
+                }}
+                onKeyUp={e => {
+                  if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                    isDismissingAmountRef.current = true;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                    setTimeout(() => { isDismissingAmountRef.current = false; }, 400);
+                  }
+                }}
+                onBeforeInput={(e: React.FormEvent<HTMLInputElement>) => {
+                  const nativeEvent = e.nativeEvent as InputEvent;
+                  if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                    isDismissingAmountRef.current = true;
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
+                    setTimeout(() => { isDismissingAmountRef.current = false; }, 400);
                   }
                 }}
                 onFocus={e => {
@@ -542,10 +568,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                   <input
                     type="number"
                     step="any"
+                    tabIndex={-1}
                     inputMode="decimal"
                     enterKeyHint="done"
                     value={userShareStr}
                     onChange={e => setUserShareStr(e.target.value)}
+                    onFocus={e => {
+                      if (isDismissingAmountRef.current) e.target.blur();
+                    }}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -567,6 +597,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                     <input
                       type="number"
                       step="any"
+                      tabIndex={-1}
                       inputMode="decimal"
                       enterKeyHint="done"
                       value={friend.amountStr}
@@ -575,6 +606,9 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                         setSplitFriends(prev =>
                           prev.map((f, i) => (i === idx ? { ...f, amountStr: val } : f))
                         );
+                      }}
+                      onFocus={e => {
+                        if (isDismissingAmountRef.current) e.target.blur();
                       }}
                       onKeyDown={e => {
                         if (e.key === 'Enter') {
@@ -616,8 +650,12 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 <div className="flex space-x-2 pt-1.5">
                   <input
                     type="text"
+                    tabIndex={-1}
                     value={newFriendName}
                     onChange={e => setNewFriendName(e.target.value)}
+                    onFocus={e => {
+                      if (isDismissingAmountRef.current) e.target.blur();
+                    }}
                     onKeyDown={async e => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -695,10 +733,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
                 <input
                   type="text"
+                  tabIndex={-1}
                   value={lendingPersonName}
                   onChange={e => {
                     setLendingPersonName(e.target.value);
                     setLendingPersonId('');
+                  }}
+                  onFocus={e => {
+                    if (isDismissingAmountRef.current) e.target.blur();
                   }}
                   placeholder="Or enter friend's name (e.g. Karthick)"
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-amber-500 shadow-sm"
@@ -709,8 +751,12 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 <label className="text-xs text-[var(--card-text-sub)] block mb-1">Expected Repayment Date (Optional)</label>
                 <input
                   type="date"
+                  tabIndex={-1}
                   value={expectedDate}
                   onChange={e => setExpectedDate(e.target.value)}
+                  onFocus={e => {
+                    if (isDismissingAmountRef.current) e.target.blur();
+                  }}
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-amber-500 shadow-sm"
                 />
               </div>
@@ -748,10 +794,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
                 <input
                   type="text"
+                  tabIndex={-1}
                   value={repayPersonName}
                   onChange={e => {
                     setRepayPersonName(e.target.value);
                     setRepayPersonId('');
+                  }}
+                  onFocus={e => {
+                    if (isDismissingAmountRef.current) e.target.blur();
                   }}
                   placeholder="Or enter friend's name (e.g. Karthick)"
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-emerald-500 shadow-sm"
@@ -768,11 +818,15 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           <div>
             <input
               type="text"
+              tabIndex={-1}
               enterKeyHint="done"
               value={note}
               onChange={e => setNote(e.target.value)}
+              onFocus={e => {
+                if (isDismissingAmountRef.current) e.target.blur();
+              }}
               onKeyDown={e => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
                   e.preventDefault();
                   e.stopPropagation();
                   e.currentTarget.blur();
