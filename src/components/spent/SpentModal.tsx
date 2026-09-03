@@ -174,8 +174,8 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveTransaction = async () => {
+    if (isSubmitting) return;
     setErrorMsg('');
 
     if (numericAmount <= 0) {
@@ -191,6 +191,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     }
 
     try {
+      setIsSubmitting(true);
       if (mode === 'EXPENSE') {
         await addTransaction({
           type: 'EXPENSE',
@@ -272,6 +273,8 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save transaction.';
       setErrorMsg(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -293,6 +296,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 text-[var(--card-text-sub)] hover:text-[var(--card-text-main)] rounded-xl hover:bg-black/5 dark:hover:bg-black/5 transition-colors"
           >
@@ -366,8 +370,8 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+        {/* Modal Body - <div> replaces <form> to prevent browser IME auto-advance and implicit submission */}
+        <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
           
           {/* Natural Language Assist Bar */}
           {mode === 'NL' && (
@@ -764,8 +768,16 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           <div>
             <input
               type="text"
+              enterKeyHint="done"
               value={note}
               onChange={e => setNote(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.blur();
+                }
+              }}
               placeholder="Optional note (e.g. Swiggy coupon applied)"
               className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] placeholder:text-[var(--card-text-sub)] focus:outline-none focus:border-indigo-500"
             />
@@ -782,20 +794,24 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           {/* Action Buttons */}
           <div className="pt-2">
             <button
-              type="submit"
-              className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-sm shadow-md active:scale-[0.99] transition-all flex items-center justify-center space-x-1.5"
+              type="button"
+              onClick={handleSaveTransaction}
+              disabled={isSubmitting}
+              className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-sm shadow-md active:scale-[0.99] transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
               <span>
-                {mode === 'EXPENSE' && 'Save Expense'}
-                {mode === 'SPLIT' && 'Save Friend Split'}
-                {mode === 'LENDING' && 'Record Loan'}
-                {mode === 'REPAY_FRIEND' && 'Record Repayment'}
-                {mode === 'NL' && 'Save Transaction'}
+                {isSubmitting ? 'Saving...' : (
+                  mode === 'EXPENSE' ? 'Save Expense' :
+                  mode === 'SPLIT' ? 'Save Friend Split' :
+                  mode === 'LENDING' ? 'Record Loan' :
+                  mode === 'REPAY_FRIEND' ? 'Record Repayment' :
+                  'Save Transaction'
+                )}
               </span>
             </button>
           </div>
-        </form>
+        </div>
 
       </div>
     </div>
