@@ -196,8 +196,21 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
                 type="number"
                 step="any"
                 inputMode="decimal"
+                enterKeyHint="done"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                  }
+                }}
+                onFocus={e => {
+                  setTimeout(() => {
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 250);
+                }}
                 placeholder="0"
                 className="w-full text-3xl font-black text-[var(--card-text-main)] bg-transparent focus:outline-none font-mono-num tracking-tight"
                 required

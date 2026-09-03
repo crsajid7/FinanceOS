@@ -413,10 +413,13 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 type="number"
                 step="any"
                 inputMode="decimal"
+                enterKeyHint="done"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
                     e.currentTarget.blur();
                   }
                 }}
@@ -534,8 +537,18 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                   <span className="text-xs text-[var(--card-text-sub)] font-mono">₹</span>
                   <input
                     type="number"
+                    step="any"
+                    inputMode="decimal"
+                    enterKeyHint="done"
                     value={userShareStr}
                     onChange={e => setUserShareStr(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.blur();
+                      }
+                    }}
                     className="w-20 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-right px-2 py-1 text-sm font-bold rounded-lg text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 font-mono-num"
                   />
                 </div>
@@ -549,12 +562,22 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                     <span className="text-xs text-[var(--card-text-sub)] font-mono">₹</span>
                     <input
                       type="number"
+                      step="any"
+                      inputMode="decimal"
+                      enterKeyHint="done"
                       value={friend.amountStr}
                       onChange={e => {
                         const val = e.target.value;
                         setSplitFriends(prev =>
                           prev.map((f, i) => (i === idx ? { ...f, amountStr: val } : f))
                         );
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.currentTarget.blur();
+                        }
                       }}
                       className="w-20 bg-black/10 dark:bg-black/10 border border-[var(--card-divider)] text-right px-2 py-1 text-sm font-bold rounded-lg text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 font-mono-num"
                     />
