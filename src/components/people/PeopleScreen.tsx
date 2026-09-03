@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Users,
   UserPlus,
@@ -37,8 +37,33 @@ export const PeopleScreen: React.FC = () => {
   const [showAddPersonModal, setShowAddPersonModal] = useState<boolean>(false);
   const [newPersonName, setNewPersonName] = useState<string>('');
   const [newPersonPhone, setNewPersonPhone] = useState<string>('');
+  const [nameError, setNameError] = useState<string>('');
   const [isSubmittingPerson, setIsSubmittingPerson] = useState<boolean>(false);
+  const [viewportStyle, setViewportStyle] = useState<React.CSSProperties>({});
   const phoneInputRef = useRef<HTMLInputElement>(null);
+
+  // Synchronize modal position with mobile visual viewport / virtual keyboard
+  useEffect(() => {
+    if (!showAddPersonModal) return;
+
+    const updateViewport = () => {
+      if (window.visualViewport) {
+        setViewportStyle({
+          height: `${window.visualViewport.height}px`,
+          top: `${window.visualViewport.offsetTop}px`,
+        });
+      }
+    };
+
+    updateViewport();
+    window.visualViewport?.addEventListener('resize', updateViewport);
+    window.visualViewport?.addEventListener('scroll', updateViewport);
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateViewport);
+      window.visualViewport?.removeEventListener('scroll', updateViewport);
+    };
+  }, [showAddPersonModal]);
 
   // Settlement modal state
   const [settleModalData, setSettleModalData] = useState<{
@@ -63,12 +88,17 @@ export const PeopleScreen: React.FC = () => {
     return new Date(`${b.date}T${b.time || '00:00'}`).getTime() - new Date(`${a.date}T${a.time || '00:00'}`).getTime();
   });
 
-  const handleAddPersonSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPersonName.trim() || isSubmittingPerson) return;
+  const handleSaveFriendClick = async () => {
+    if (isSubmittingPerson) return;
+    const trimmed = newPersonName.trim();
+    if (!trimmed) {
+      setNameError("Please enter friend's name");
+      return;
+    }
+    setNameError('');
     try {
       setIsSubmittingPerson(true);
-      const created = await addPerson(newPersonName.trim(), newPersonPhone.trim() || undefined);
+      const created = await addPerson(trimmed, newPersonPhone.trim() || undefined);
       setNewPersonName('');
       setNewPersonPhone('');
       setShowAddPersonModal(false);
@@ -524,28 +554,40 @@ export const PeopleScreen: React.FC = () => {
 
       {/* Add Friend Modal */}
       {showAddPersonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm theme-card rounded-3xl p-6 shadow-2xl space-y-4">
+        <div
+          style={viewportStyle}
+          className="fixed inset-x-0 top-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm overflow-y-auto animate-in fade-in"
+        >
+          <div className="w-full max-w-sm theme-card rounded-3xl p-6 shadow-2xl space-y-4 my-auto">
             <h3 className="text-base font-black text-[var(--card-text-main)]">Add New Friend</h3>
             
-            <form onSubmit={handleAddPersonSubmit} className="space-y-3 text-xs">
+            <form onSubmit={e => e.preventDefault()} className="space-y-3 text-xs">
               <div>
                 <label className="text-[var(--card-text-sub)] block mb-1 font-mono font-bold">FRIEND'S NAME</label>
                 <input
                   type="text"
                   value={newPersonName}
-                  onChange={e => setNewPersonName(e.target.value)}
+                  onChange={e => {
+                    setNewPersonName(e.target.value);
+                    if (nameError) setNameError('');
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       phoneInputRef.current?.focus();
                     }
                   }}
+                  enterKeyHint="next"
                   placeholder="e.g. Karthick, Hemanth"
-                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
+                  className={`w-full bg-black/5 dark:bg-black/5 border ${
+                    nameError ? 'border-rose-500' : 'border-[var(--card-divider)]'
+                  } px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500`}
                   required
                   autoFocus
                 />
+                {nameError && (
+                  <p className="text-[11px] text-rose-500 mt-1 font-semibold">{nameError}</p>
+                )}
               </div>
 
               <div>
@@ -554,8 +596,15 @@ export const PeopleScreen: React.FC = () => {
                   ref={phoneInputRef}
                   type="tel"
                   inputMode="tel"
+                  enterKeyHint="done"
                   value={newPersonPhone}
                   onChange={e => setNewPersonPhone(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
                   placeholder="+91 98765 43210"
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
                 />
@@ -564,13 +613,19 @@ export const PeopleScreen: React.FC = () => {
               <div className="flex space-x-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddPersonModal(false)}
+                  onClick={() => {
+                    setNameError('');
+                    setNewPersonName('');
+                    setNewPersonPhone('');
+                    setShowAddPersonModal(false);
+                  }}
                   className="flex-1 py-2.5 bg-black/10 dark:bg-black/10 font-bold text-[var(--card-text-main)] rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleSaveFriendClick}
                   disabled={isSubmittingPerson}
                   className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-bold text-white rounded-xl flex items-center justify-center space-x-1 shadow-sm disabled:opacity-50"
                 >
