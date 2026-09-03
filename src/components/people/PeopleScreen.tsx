@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Users,
   UserPlus,
@@ -37,6 +37,8 @@ export const PeopleScreen: React.FC = () => {
   const [showAddPersonModal, setShowAddPersonModal] = useState<boolean>(false);
   const [newPersonName, setNewPersonName] = useState<string>('');
   const [newPersonPhone, setNewPersonPhone] = useState<string>('');
+  const [isSubmittingPerson, setIsSubmittingPerson] = useState<boolean>(false);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
 
   // Settlement modal state
   const [settleModalData, setSettleModalData] = useState<{
@@ -63,12 +65,17 @@ export const PeopleScreen: React.FC = () => {
 
   const handleAddPersonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPersonName.trim()) return;
-    const created = await addPerson(newPersonName.trim(), newPersonPhone.trim() || undefined);
-    setNewPersonName('');
-    setNewPersonPhone('');
-    setShowAddPersonModal(false);
-    setSelectedPersonId(created.id);
+    if (!newPersonName.trim() || isSubmittingPerson) return;
+    try {
+      setIsSubmittingPerson(true);
+      const created = await addPerson(newPersonName.trim(), newPersonPhone.trim() || undefined);
+      setNewPersonName('');
+      setNewPersonPhone('');
+      setShowAddPersonModal(false);
+      setSelectedPersonId(created.id);
+    } finally {
+      setIsSubmittingPerson(false);
+    }
   };
 
   const handleOpenSettleModal = (type: 'RECEIVE' | 'PAY', amount: number, personId: string, personName: string) => {
@@ -396,7 +403,6 @@ export const PeopleScreen: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-[var(--page-title)] tracking-tight">Friends & Shared Money</h1>
-          <p className="text-xs text-[var(--page-subtitle)] mt-0.5">Two-way net balances and settlements</p>
         </div>
 
         <button
@@ -529,6 +535,12 @@ export const PeopleScreen: React.FC = () => {
                   type="text"
                   value={newPersonName}
                   onChange={e => setNewPersonName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      phoneInputRef.current?.focus();
+                    }
+                  }}
                   placeholder="e.g. Karthick, Hemanth"
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500"
                   required
@@ -539,7 +551,9 @@ export const PeopleScreen: React.FC = () => {
               <div>
                 <label className="text-[var(--card-text-sub)] block mb-1 font-mono font-bold">PHONE NUMBER (OPTIONAL)</label>
                 <input
+                  ref={phoneInputRef}
                   type="tel"
+                  inputMode="tel"
                   value={newPersonPhone}
                   onChange={e => setNewPersonPhone(e.target.value)}
                   placeholder="+91 98765 43210"
@@ -557,10 +571,11 @@ export const PeopleScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-bold text-white rounded-xl flex items-center justify-center space-x-1 shadow-sm"
+                  disabled={isSubmittingPerson}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-bold text-white rounded-xl flex items-center justify-center space-x-1 shadow-sm disabled:opacity-50"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>Save Friend</span>
+                  <span>{isSubmittingPerson ? 'Saving...' : 'Save Friend'}</span>
                 </button>
               </div>
             </form>

@@ -19,6 +19,7 @@ import {
   generateWhereDidMyMoneyGo,
   computeAccountBalancesFromLedger,
   formatLocalDate,
+  formatLocalTime,
   checkSufficientBalance,
 } from '../services/accountingEngine';
 
@@ -37,9 +38,11 @@ interface FinanceContextType {
   overview: FinancialOverviewSummary;
   whereDidMyMoneyGo: WhereDidMyMoneyGoReport;
 
-  // Reporting Period
+  // Reporting Period & Custom Range
   selectedPeriod: ReportingPeriod;
   setSelectedPeriod: (period: ReportingPeriod) => void;
+  customDateRange: { startDate: string; endDate: string };
+  setCustomDateRange: (range: { startDate: string; endDate: string }) => void;
 
   // Transaction Operations
   addTransaction: (tx: AddTransactionInput) => Promise<Transaction>;
@@ -90,6 +93,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [reservedMoney, setReservedMoney] = useState<ReservedMoney[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<ReportingPeriod>('THIS_MONTH');
+  const [customDateRange, setCustomDateRange] = useState<{ startDate: string; endDate: string }>(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return {
+      startDate: formatLocalDate(start),
+      endDate: formatLocalDate(now),
+    };
+  });
 
   // Load user data reactively from Dexie IndexedDB
   const loadUserData = useCallback(async () => {
@@ -129,12 +140,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Derived Master Overview & Where Did My Money Go
   const overview = useMemo(() => {
-    return calculateFinancialOverview(transactions, reservedMoney, selectedPeriod);
-  }, [transactions, reservedMoney, selectedPeriod]);
+    return calculateFinancialOverview(transactions, reservedMoney, selectedPeriod, new Date(), customDateRange);
+  }, [transactions, reservedMoney, selectedPeriod, customDateRange]);
 
   const whereDidMyMoneyGo = useMemo(() => {
-    return generateWhereDidMyMoneyGo(transactions, reservedMoney, selectedPeriod);
-  }, [transactions, reservedMoney, selectedPeriod]);
+    return generateWhereDidMyMoneyGo(transactions, reservedMoney, selectedPeriod, customDateRange);
+  }, [transactions, reservedMoney, selectedPeriod, customDateRange]);
 
   const verifyBalance = useCallback((accountId: string, amount: number) => {
     return checkSufficientBalance(accountId, amount, accounts);
@@ -394,6 +405,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       await db.transactions.delete(tx.id);
     }
 
+    const now = new Date();
+    const currentTime = formatLocalTime(now);
+    const currentDate = formatLocalDate(now);
+
     if (bankAmount > 0) {
       await addTransaction({
         type: 'OPENING_BALANCE',
@@ -401,8 +416,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         category: 'Other',
         accountId: 'acc_bank',
         note: 'Starting Bank balance',
-        date: formatLocalDate(),
-        time: '00:00',
+        date: currentDate,
+        time: currentTime,
       });
     }
 
@@ -413,8 +428,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         category: 'Other',
         accountId: 'acc_cash',
         note: 'Starting Cash in Hand',
-        date: formatLocalDate(),
-        time: '00:00',
+        date: currentDate,
+        time: currentTime,
       });
     }
   };
@@ -540,6 +555,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         whereDidMyMoneyGo,
         selectedPeriod,
         setSelectedPeriod,
+        customDateRange,
+        setCustomDateRange,
         addTransaction,
         updateTransaction,
         deleteTransaction,

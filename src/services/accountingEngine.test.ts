@@ -5,7 +5,10 @@ import {
   computeAccountBalancesFromLedger,
   checkSufficientBalance,
   formatLocalDate,
+  formatLocalTime,
   parseLocalDate,
+  formatINR,
+  distributeEqualSplit,
   validateSplit,
   validateLoanRepayment,
   generateWhereDidMyMoneyGo,
@@ -216,5 +219,56 @@ describe('FinanceOS Two-Way Friend Balances & Split Auto-Creation', () => {
     const balances = calculateAllPersonBalances(ledger, peopleList);
     expect(balances[0].netBalance).toBe(0);
     expect(balances[0].status).toBe('SETTLED');
+  });
+
+  // TEST 9: Decimal Money Values Must Never Be Rounded
+  it('TEST 9: Decimal money values format correctly to 2 decimal places and omit .00 for whole', () => {
+    expect(formatINR(1000.75)).toBe('₹1,000.75');
+    expect(formatINR(1000.5)).toBe('₹1,000.50');
+    expect(formatINR(1000)).toBe('₹1,000');
+    expect(formatINR(33.33)).toBe('₹33.33');
+    expect(formatINR(33.34)).toBe('₹33.34');
+    expect(formatINR(-50.25)).toBe('−₹50.25');
+  });
+
+  // TEST 10: Split Remainder Distribution
+  it('TEST 10: distributeEqualSplit divides ₹100 equally among 3 people with exact sum', () => {
+    const shares3 = distributeEqualSplit(100, 3);
+    expect(shares3).toEqual([33.34, 33.33, 33.33]);
+    const sum3 = Math.round(shares3.reduce((a, b) => a + b, 0) * 100) / 100;
+    expect(sum3).toBe(100);
+
+    const shares6 = distributeEqualSplit(100, 6);
+    expect(shares6).toHaveLength(6);
+    const sum6 = Math.round(shares6.reduce((a, b) => a + b, 0) * 100) / 100;
+    expect(sum6).toBe(100);
+
+    const sharesDec = distributeEqualSplit(100.75, 2);
+    expect(sharesDec).toEqual([50.38, 50.37]);
+    const sumDec = Math.round(sharesDec.reduce((a, b) => a + b, 0) * 100) / 100;
+    expect(sumDec).toBe(100.75);
+
+    // Validation passes cleanly
+    const validation = validateSplit(100, shares3[0], shares3.slice(1));
+    expect(validation.isValid).toBe(true);
+  });
+
+  // TEST 11: Custom Date Range for Financial Reporting
+  it('TEST 11: CUSTOM reporting period filters transactions within inclusive local date range', () => {
+    const ledger: Transaction[] = [
+      { id: 'tx_old', userId: 'user_1', type: 'EXPENSE', amount: 100, category: 'Food', date: '2026-09-01', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 1, updatedAt: 1 },
+      { id: 'tx_in_1', userId: 'user_1', type: 'EXPENSE', amount: 250.5, category: 'Food', date: '2026-09-05', time: '12:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 2, updatedAt: 2 },
+      { id: 'tx_in_2', userId: 'user_1', type: 'EXPENSE', amount: 150.25, category: 'Transport', date: '2026-10-05', time: '18:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 3, updatedAt: 3 },
+      { id: 'tx_future', userId: 'user_1', type: 'EXPENSE', amount: 500, category: 'Food', date: '2026-10-06', time: '10:00', accountId: 'acc_bank', status: 'ACTIVE', createdAt: 4, updatedAt: 4 },
+    ];
+
+    const overview = calculateFinancialOverview(ledger, [], 'CUSTOM', new Date('2026-10-05'), {
+      startDate: '2026-09-05',
+      endDate: '2026-10-05',
+    });
+
+    // 250.5 + 150.25 = 400.75
+    expect(overview.actualPersonalSpentInPeriod).toBe(400.75);
+    expect(overview.periodLabel).toBe('5 Sep 2026 – 5 Oct 2026');
   });
 });

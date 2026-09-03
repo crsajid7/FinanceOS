@@ -17,7 +17,7 @@ import { useFinance } from '../../context/FinanceContext';
 import { StandardCategory, MoneyLocationId } from '../../types/finance';
 import { getCategorySuggestionForAmount, getFrequentPeople } from '../../services/smartSuggestions';
 import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
-import { validateSplit, formatINR } from '../../services/accountingEngine';
+import { validateSplit, formatINR, distributeEqualSplit } from '../../services/accountingEngine';
 
 const STANDARD_CATEGORIES: { name: StandardCategory; emoji: string }[] = [
   { name: 'Food', emoji: '🍔' },
@@ -38,7 +38,7 @@ interface SpentModalProps {
 type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'REPAY_FRIEND' | 'NL';
 
 export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
-  const { transactions, people, addTransaction, recordBorrowRepayment, accounts, verifyBalance } = useFinance();
+  const { transactions, people, addTransaction, recordBorrowRepayment, accounts, verifyBalance, ensurePerson } = useFinance();
   const [mode, setMode] = useState<Mode>('EXPENSE');
 
   const [amountStr, setAmountStr] = useState<string>('');
@@ -60,11 +60,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   const [nlText, setNlText] = useState<string>('');
   const [nlError, setNlError] = useState<string>('');
 
+  const [suggestedCat, setSuggestedCat] = useState<string | undefined>(undefined);
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [suggestedCat, setSuggestedCat] = useState<string | undefined>();
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const nlInputRef = useRef<HTMLInputElement>(null);
+
+  const numericAmount = parseFloat(amountStr) || 0;
 
   useEffect(() => {
     if (isOpen) {
@@ -89,7 +92,6 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
-  const numericAmount = parseFloat(amountStr) || 0;
   useEffect(() => {
     if (numericAmount > 0 && mode === 'EXPENSE') {
       const suggestion = getCategorySuggestionForAmount(numericAmount, transactions);
@@ -103,13 +105,13 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     if (mode === 'SPLIT' && numericAmount > 0) {
       const friendCount = splitFriends.length;
       if (friendCount > 0) {
-        const equalShare = Math.round(numericAmount / (friendCount + 1));
-        setUserShareStr(String(equalShare));
+        const shares = distributeEqualSplit(numericAmount, friendCount + 1);
+        setUserShareStr(String(shares[0] || 0));
         setSplitFriends(prev =>
-          prev.map(f => ({ ...f, amountStr: String(equalShare) }))
+          prev.map((f, idx) => ({ ...f, amountStr: String(shares[idx + 1] || 0) }))
         );
       } else {
-        setUserShareStr(String(Math.round(numericAmount / 2)));
+        setUserShareStr(String(numericAmount));
       }
     }
   }, [numericAmount, mode, splitFriends.length]);
@@ -120,7 +122,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   const bankAccount = accounts.find(a => a.id === 'acc_bank') || accounts[0];
   const cashAccount = accounts.find(a => a.id === 'acc_cash') || accounts[1];
 
-  const handleAddSplitFriend = (personId: string, personName: string) => {
+  const handleAddSplitFriend = async (personId: string, personName: string) => {
     const trimmed = personName.trim();
     if (!trimmed) return;
 
@@ -131,17 +133,15 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Check if person already exists in people list
-    const existingPerson = people.find(p => p.name.trim().toLowerCase() === normalized);
-    const finalPid = personId || existingPerson?.id || '';
-    const finalName = existingPerson?.name || trimmed;
+    // Auto-create or resolve person in database immediately!
+    const resolvedPerson = await ensurePerson(trimmed);
 
-    const nextFriends = [...splitFriends, { personId: finalPid, personName: finalName, amountStr: '' }];
+    const nextFriends = [...splitFriends, { personId: resolvedPerson.id, personName: resolvedPerson.name, amountStr: '' }];
     const totalCount = nextFriends.length + 1;
-    const equalShare = Math.round(numericAmount / totalCount);
+    const shares = distributeEqualSplit(numericAmount, totalCount);
 
-    setUserShareStr(String(equalShare));
-    setSplitFriends(nextFriends.map(f => ({ ...f, amountStr: String(equalShare) })));
+    setUserShareStr(String(shares[0] || 0));
+    setSplitFriends(nextFriends.map((f, idx) => ({ ...f, amountStr: String(shares[idx + 1] || 0) })));
   };
 
   const handleParseNL = () => {
@@ -415,6 +415,16 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 inputMode="decimal"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
+                onFocus={e => {
+                  setTimeout(() => {
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 250);
+                }}
                 placeholder="0"
                 className="w-full text-3xl font-black text-[var(--card-text-main)] bg-transparent focus:outline-none font-mono-num tracking-tight"
                 required
@@ -581,14 +591,23 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                     type="text"
                     value={newFriendName}
                     onChange={e => setNewFriendName(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newFriendName.trim()) {
+                          await handleAddSplitFriend('', newFriendName.trim());
+                          setNewFriendName('');
+                        }
+                      }
+                    }}
                     placeholder="Add friend name..."
                     className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3 py-2 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-indigo-500 shadow-sm"
                   />
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (newFriendName.trim()) {
-                        handleAddSplitFriend('', newFriendName.trim());
+                        await handleAddSplitFriend('', newFriendName.trim());
                         setNewFriendName('');
                       }
                     }}

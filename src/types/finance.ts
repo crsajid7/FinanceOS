@@ -138,7 +138,7 @@ export interface PersonBalanceSummary {
   lastInteractionDate?: string;
 }
 
-export type ReportingPeriod = 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_7_DAYS' | 'TODAY' | 'ALL_TIME';
+export type ReportingPeriod = 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_7_DAYS' | 'TODAY' | 'ALL_TIME' | 'CUSTOM';
 
 export interface ReportingDateRange {
   key: string;

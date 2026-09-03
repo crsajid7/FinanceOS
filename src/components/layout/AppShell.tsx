@@ -69,7 +69,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                   FinanceOS
                 </span>
                 <span className="text-[10px] uppercase tracking-wider text-[var(--page-subtitle)] font-bold block font-mono">
-                  Student Finance App
+                  Personal Money Diary
                 </span>
               </div>
             </div>

@@ -22,6 +22,8 @@ export const MonthScreen: React.FC<MonthScreenProps> = ({ onOpenWhereDidMoneyGo 
   const {
     selectedPeriod,
     setSelectedPeriod,
+    customDateRange,
+    setCustomDateRange,
     overview,
     reservedMoney,
     addReservation,
@@ -33,6 +35,18 @@ export const MonthScreen: React.FC<MonthScreenProps> = ({ onOpenWhereDidMoneyGo 
   const [resAmountStr, setResAmountStr] = useState<string>('');
   const [resPurpose, setResPurpose] = useState<string>('');
   const [resDueDate, setResDueDate] = useState<string>('');
+
+  const [customStart, setCustomStart] = useState<string>(customDateRange.startDate);
+  const [customEnd, setCustomEnd] = useState<string>(customDateRange.endDate);
+
+  const handleApplyCustomRange = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customStart || !customEnd) return;
+    setCustomDateRange({
+      startDate: customStart,
+      endDate: customEnd,
+    });
+  };
 
   const handleAddReservationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +70,7 @@ export const MonthScreen: React.FC<MonthScreenProps> = ({ onOpenWhereDidMoneyGo 
     { id: 'LAST_7_DAYS', label: 'Last 7 Days' },
     { id: 'TODAY', label: 'Today' },
     { id: 'ALL_TIME', label: 'All Time' },
+    { id: 'CUSTOM', label: 'Custom' },
   ];
 
   return (
@@ -90,6 +105,51 @@ export const MonthScreen: React.FC<MonthScreenProps> = ({ onOpenWhereDidMoneyGo 
             ))}
           </div>
         </div>
+
+        {/* Custom Date Range Selector */}
+        {selectedPeriod === 'CUSTOM' && (
+          <form
+            onSubmit={handleApplyCustomRange}
+            className="theme-card p-3.5 rounded-2xl border border-[var(--card-divider)] flex flex-wrap items-end justify-between gap-3 text-xs shadow-sm animate-in fade-in"
+          >
+            <div className="flex items-center space-x-2 flex-1 min-w-[240px]">
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-[var(--card-text-sub)] uppercase font-mono block mb-1">
+                  FROM DATE
+                </label>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={e => setCustomStart(e.target.value)}
+                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-xl px-2.5 py-2 text-xs text-[var(--card-text-main)] font-mono focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <span className="text-[var(--card-text-sub)] font-bold mb-2">→</span>
+
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-[var(--card-text-sub)] uppercase font-mono block mb-1">
+                  TO DATE
+                </label>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={e => setCustomEnd(e.target.value)}
+                  className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] rounded-xl px-2.5 py-2 text-xs text-[var(--card-text-main)] font-mono focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center justify-center space-x-1"
+            >
+              <span>Apply Range</span>
+            </button>
+          </form>
+        )}
       </div>
 
       {/* 2. Spending Distribution Donut Card */}

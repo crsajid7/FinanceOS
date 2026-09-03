@@ -40,13 +40,49 @@ export function parseLocalDate(dateStr: string): Date {
 }
 
 /**
- * Formats currency amount in Indian Rupee format (e.g. ₹3,200 or −₹500)
+ * Formats currency amount in Indian Rupee format (e.g. ₹3,200, ₹1,000.75 or −₹500.50)
+ * Preserves decimals up to two decimal places if non-zero, but omits trailing .00 for whole amounts.
  */
 export function formatINR(amount: number): string {
   const isNegative = amount < 0;
-  const absAmount = Math.abs(Math.round(amount));
-  const formatted = new Intl.NumberFormat('en-IN').format(absAmount);
+  const absAmount = Math.abs(amount);
+  const roundedCents = Math.round(absAmount * 100) / 100;
+  const hasDecimals = Math.abs(roundedCents - Math.round(roundedCents)) >= 0.005;
+
+  const formatted = new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(roundedCents);
+
   return `${isNegative ? '−' : ''}₹${formatted}`;
+}
+
+/**
+ * Formats local time HH:mm
+ */
+export function formatLocalTime(date: Date = new Date()): string {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Deterministically splits a total bill among N participants down to the exact paisa,
+ * distributing the remainder paise to the first participants so sum(shares) === totalAmount.
+ */
+export function distributeEqualSplit(totalAmount: number, participantCount: number): number[] {
+  if (participantCount <= 0 || totalAmount <= 0) return [];
+
+  const totalPaise = Math.round(totalAmount * 100);
+  const basePaise = Math.floor(totalPaise / participantCount);
+  const remainderPaise = totalPaise % participantCount;
+
+  const shares: number[] = [];
+  for (let i = 0; i < participantCount; i++) {
+    const paise = basePaise + (i < remainderPaise ? 1 : 0);
+    shares.push(Math.round(paise) / 100);
+  }
+  return shares;
 }
 
 /**
@@ -61,15 +97,30 @@ export function getYearMonth(dateInput: string | Date = new Date()): string {
 }
 
 /**
- * Generates reporting date ranges for a given period
+ * Generates reporting date ranges for a given period, including custom ranges
  */
 export function getReportingDateRange(
   period: ReportingPeriod = 'THIS_MONTH',
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  customRange?: { startDate: string; endDate: string }
 ): ReportingDateRange {
   const todayStr = formatLocalDate(referenceDate);
   const refYear = referenceDate.getFullYear();
   const refMonth = referenceDate.getMonth(); // 0-indexed
+
+  if (period === 'CUSTOM' && customRange?.startDate && customRange?.endDate) {
+    const sDate = parseLocalDate(customRange.startDate);
+    const eDate = parseLocalDate(customRange.endDate);
+    const sLabel = `${sDate.getDate()} ${SHORT_MONTH_NAMES[sDate.getMonth()]} ${sDate.getFullYear()}`;
+    const eLabel = `${eDate.getDate()} ${SHORT_MONTH_NAMES[eDate.getMonth()]} ${eDate.getFullYear()}`;
+    return {
+      key: `custom_${customRange.startDate}_${customRange.endDate}`,
+      label: `${sLabel} – ${eLabel}`,
+      startDate: customRange.startDate,
+      endDate: customRange.endDate,
+      isCurrent: true,
+    };
+  }
 
   switch (period) {
     case 'TODAY':
@@ -193,6 +244,8 @@ export function computeAccountBalancesFromLedger(
   }
 
   const userId = baseAccounts[0]?.userId || 'student_user_1';
+  const roundedBank = Math.round(bankBalance * 100) / 100;
+  const roundedCash = Math.round(cashBalance * 100) / 100;
 
   return [
     {
@@ -200,14 +253,14 @@ export function computeAccountBalancesFromLedger(
       userId,
       name: 'Bank Account',
       type: 'BANK',
-      balance: bankBalance,
+      balance: roundedBank,
     },
     {
       id: 'acc_cash',
       userId,
       name: 'Cash in Hand',
       type: 'CASH',
-      balance: cashBalance,
+      balance: roundedCash,
     },
   ];
 }
@@ -369,9 +422,9 @@ export function calculateAllPersonBalances(
   }
 
   return Array.from(balanceMap.values()).map(p => {
-    const amountTheyOweMe = p.splitOwed + p.loanOwed;
-    const amountIOweThem = p.borrowedOwed;
-    const netBalance = amountTheyOweMe - amountIOweThem;
+    const amountTheyOweMe = Math.round((p.splitOwed + p.loanOwed) * 100) / 100;
+    const amountIOweThem = Math.round(p.borrowedOwed * 100) / 100;
+    const netBalance = Math.round((amountTheyOweMe - amountIOweThem) * 100) / 100;
 
     let status: 'THEY_OWE_ME' | 'I_OWE_THEM' | 'SETTLED' = 'SETTLED';
     if (netBalance > 0) status = 'THEY_OWE_ME';
@@ -380,14 +433,14 @@ export function calculateAllPersonBalances(
     return {
       personId: p.personId,
       personName: p.personName,
-      splitOwed: p.splitOwed,
-      loanOwed: p.loanOwed,
+      splitOwed: Math.round(p.splitOwed * 100) / 100,
+      loanOwed: Math.round(p.loanOwed * 100) / 100,
       amountTheyOweMe,
-      borrowedOwed: p.borrowedOwed,
+      borrowedOwed: Math.round(p.borrowedOwed * 100) / 100,
       amountIOweThem,
       netBalance,
       status,
-      settledTotal: p.settledTotal,
+      settledTotal: Math.round(p.settledTotal * 100) / 100,
       lastInteractionDate: p.lastInteractionDate,
     };
   });
@@ -400,9 +453,10 @@ export function calculateFinancialOverview(
   transactions: Transaction[],
   reservedList: ReservedMoney[] = [],
   period: ReportingPeriod = 'THIS_MONTH',
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  customRange?: { startDate: string; endDate: string }
 ): FinancialOverviewSummary {
-  const dateRange = getReportingDateRange(period, referenceDate);
+  const dateRange = getReportingDateRange(period, referenceDate, customRange);
   const todayStr = formatLocalDate(referenceDate);
 
   // 1. Current Physical Money
@@ -573,9 +627,10 @@ export function calculateFinancialOverview(
 export function generateWhereDidMyMoneyGo(
   transactions: Transaction[],
   reservedList: ReservedMoney[] = [],
-  period: ReportingPeriod = 'THIS_MONTH'
+  period: ReportingPeriod = 'THIS_MONTH',
+  customRange?: { startDate: string; endDate: string }
 ): WhereDidMyMoneyGoReport {
-  const summary = calculateFinancialOverview(transactions, reservedList, period);
+  const summary = calculateFinancialOverview(transactions, reservedList, period, new Date(), customRange);
 
   const topCategories = summary.categorySpending.slice(0, 3);
   const topCatListText = topCategories.length > 0
