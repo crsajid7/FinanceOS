@@ -117,19 +117,19 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     }
   }, [numericAmount, mode, splitFriends.length]);
 
-  if (!isOpen) return null;
-
-  const frequentPeople = getFrequentPeople(transactions, people, 4);
+  const frequentPeople = getFrequentPeople(transactions || [], people || [], 4);
   const lendDisplayPeople = React.useMemo(() => {
     const list = [...frequentPeople];
     if (lendingPersonId && !list.some(p => p.id === lendingPersonId)) {
-      const found = people.find(p => p.id === lendingPersonId);
+      const found = (people || []).find(p => p.id === lendingPersonId);
       if (found) list.push(found);
     }
     return list;
   }, [frequentPeople, lendingPersonId, people]);
-  const bankAccount = accounts.find(a => a.id === 'acc_bank') || accounts[0];
-  const cashAccount = accounts.find(a => a.id === 'acc_cash') || accounts[1];
+  const bankAccount = (accounts || []).find(a => a.id === 'acc_bank') || accounts?.[0] || { balance: 0 };
+  const cashAccount = (accounts || []).find(a => a.id === 'acc_cash') || accounts?.[1] || { balance: 0 };
+
+  if (!isOpen) return null;
 
   const handleAddSplitFriend = async (personId: string, personName: string) => {
     const trimmed = personName.trim();
