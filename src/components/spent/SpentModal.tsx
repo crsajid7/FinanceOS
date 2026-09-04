@@ -153,9 +153,10 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     setSplitFriends(nextFriends.map((f, idx) => ({ ...f, amountStr: String(shares[idx + 1] || 0) })));
   };
 
-  const handleParseNL = () => {
+  const handleParseNL = async () => {
     setNlError('');
-    const parsed = parseNaturalLanguage(nlText);
+    const knownFriendNames = (people || []).map(p => p.name);
+    const parsed = parseNaturalLanguage(nlText, knownFriendNames);
     if (!parsed) {
       setNlError('Could not understand. Try: "Spent 50 on food" or "Lent 500 to Karthick"');
       return;
@@ -165,19 +166,54 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     setSelectedCategory(parsed.category || 'Food');
     setNote(parsed.note || '');
 
+    // Set payment source if explicitly detected
+    if (parsed.account) {
+      setSelectedAccountId(parsed.account);
+    }
+
     if (parsed.type === 'SPLIT') {
       setMode('SPLIT');
-      setUserShareStr(String(parsed.userShare || Math.round(parsed.amount / 2)));
-      if (parsed.splits && parsed.splits.length > 0) {
-        setSplitFriends(parsed.splits.map(s => ({
-          personId: '',
-          personName: s.personName,
-          amountStr: String(s.amount),
-        })));
+      if (parsed.people && parsed.people.length > 0) {
+        // Resolve all detected people in database
+        const friendObjects = await Promise.all(
+          parsed.people.map(async name => {
+            const p = await ensurePerson(name);
+            return { personId: p.id, personName: p.name };
+          })
+        );
+
+        if (parsed.splits && parsed.splits.length > 0 && parsed.userShare !== undefined) {
+          setUserShareStr(String(parsed.userShare));
+          setSplitFriends(
+            friendObjects.map(f => {
+              const matchedSplit = parsed.splits?.find(s => s.personName.toLowerCase() === f.personName.toLowerCase());
+              return {
+                personId: f.personId,
+                personName: f.personName,
+                amountStr: String(matchedSplit ? matchedSplit.amount : Math.round(parsed.amount / (friendObjects.length + 1))),
+              };
+            })
+          );
+        } else {
+          const totalCount = friendObjects.length + 1;
+          const shares = distributeEqualSplit(parsed.amount, totalCount);
+          setUserShareStr(String(shares[0] || 0));
+          setSplitFriends(
+            friendObjects.map((f, idx) => ({
+              personId: f.personId,
+              personName: f.personName,
+              amountStr: String(shares[idx + 1] || 0),
+            }))
+          );
+        }
       }
     } else if (parsed.type === 'LENDING') {
       setMode('LENDING');
-      setLendingPersonName(parsed.personName || '');
+      if (parsed.personName) {
+        const p = await ensurePerson(parsed.personName);
+        setLendingPersonId(p.id);
+        setLendingPersonName(p.name);
+      }
     } else {
       setMode('EXPENSE');
     }
