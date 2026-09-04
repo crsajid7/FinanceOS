@@ -120,6 +120,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const frequentPeople = getFrequentPeople(transactions, people, 4);
+  const lendDisplayPeople = React.useMemo(() => {
+    const list = [...frequentPeople];
+    if (lendingPersonId && !list.some(p => p.id === lendingPersonId)) {
+      const found = people.find(p => p.id === lendingPersonId);
+      if (found) list.push(found);
+    }
+    return list;
+  }, [frequentPeople, lendingPersonId, people]);
   const bankAccount = accounts.find(a => a.id === 'acc_bank') || accounts[0];
   const cashAccount = accounts.find(a => a.id === 'acc_cash') || accounts[1];
 
@@ -743,7 +751,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 <label className="text-xs font-bold text-[var(--card-text-main)] block mb-1.5">Who did you lend to?</label>
                 
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  {frequentPeople.map(p => (
+                  {lendDisplayPeople.map(p => (
                     <button
                       key={p.id}
                       type="button"
@@ -765,13 +773,54 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="text"
                   tabIndex={-1}
+                  enterKeyHint="done"
                   value={lendingPersonName}
                   onChange={e => {
                     setLendingPersonName(e.target.value);
                     setLendingPersonId('');
                   }}
                   onFocus={e => {
-                    if (isDismissingAmountRef.current) e.target.blur();
+                    if (isDismissingAmountRef.current) {
+                      e.target.blur();
+                      return;
+                    }
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 250);
+                  }}
+                  onKeyDown={async e => {
+                    if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const trimmed = lendingPersonName.trim();
+                      e.currentTarget.blur();
+                      if (trimmed) {
+                        const p = await ensurePerson(trimmed);
+                        setLendingPersonId(p.id);
+                        setLendingPersonName(p.name);
+                      }
+                    }
+                  }}
+                  onKeyUp={e => {
+                    if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  onBeforeInput={async (e: React.FormEvent<HTMLInputElement>) => {
+                    const nativeEvent = e.nativeEvent as InputEvent;
+                    if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                      e.preventDefault();
+                      const inputEl = e.currentTarget as HTMLInputElement;
+                      const trimmed = lendingPersonName.trim();
+                      inputEl.blur();
+                      if (trimmed) {
+                        const p = await ensurePerson(trimmed);
+                        setLendingPersonId(p.id);
+                        setLendingPersonName(p.name);
+                      }
+                    }
                   }}
                   placeholder="Or enter friend's name (e.g. Karthick)"
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-amber-500 shadow-sm"
@@ -826,13 +875,54 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="text"
                   tabIndex={-1}
+                  enterKeyHint="done"
                   value={repayPersonName}
                   onChange={e => {
                     setRepayPersonName(e.target.value);
                     setRepayPersonId('');
                   }}
                   onFocus={e => {
-                    if (isDismissingAmountRef.current) e.target.blur();
+                    if (isDismissingAmountRef.current) {
+                      e.target.blur();
+                      return;
+                    }
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 250);
+                  }}
+                  onKeyDown={async e => {
+                    if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const trimmed = repayPersonName.trim();
+                      e.currentTarget.blur();
+                      if (trimmed) {
+                        const p = await ensurePerson(trimmed);
+                        setRepayPersonId(p.id);
+                        setRepayPersonName(p.name);
+                      }
+                    }
+                  }}
+                  onKeyUp={e => {
+                    if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  onBeforeInput={async (e: React.FormEvent<HTMLInputElement>) => {
+                    const nativeEvent = e.nativeEvent as InputEvent;
+                    if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                      e.preventDefault();
+                      const inputEl = e.currentTarget as HTMLInputElement;
+                      const trimmed = repayPersonName.trim();
+                      inputEl.blur();
+                      if (trimmed) {
+                        const p = await ensurePerson(trimmed);
+                        setRepayPersonId(p.id);
+                        setRepayPersonName(p.name);
+                      }
+                    }
                   }}
                   placeholder="Or enter friend's name (e.g. Karthick)"
                   className="w-full bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs px-3.5 py-2.5 rounded-xl text-[var(--card-text-main)] focus:outline-none focus:border-emerald-500 shadow-sm"
