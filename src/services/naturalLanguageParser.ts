@@ -5,7 +5,7 @@ export interface ParsedNaturalLanguage {
   amount: number;
   userShare?: number;
   category: StandardCategory;
-  account?: MoneyLocationId | null;
+  account?: MoneyLocationId;
   people: string[];
   personName?: string;
   isMonthlyBudget?: boolean;
@@ -19,10 +19,10 @@ export const KNOWN_CATEGORIES: { name: StandardCategory; keywords: string[] }[] 
   {
     name: 'Food',
     keywords: [
-      'restaurant food', 'food', 'breakfast', 'lunch', 'dinner', 'snacks', 'snack', 'restaurant',
-      'shawarma', 'pizza', 'burger', 'eating', 'meal', 'cafe', 'canteen',
-      'chai', 'tea', 'coffee', 'swiggy', 'zomato', 'mcdonalds', 'biryani',
-      'bakery', 'sweets', 'juice'
+      'restaurant food', 'chicken biryani', 'biryani', 'shawarma', 'pizza', 'burger',
+      'food', 'breakfast', 'lunch', 'dinner', 'snacks', 'snack', 'restaurant',
+      'eating', 'meal', 'cafe', 'canteen', 'chai', 'tea', 'coffee',
+      'swiggy', 'zomato', 'mcdonalds', 'bakery', 'sweets', 'juice'
     ]
   },
   {
@@ -100,13 +100,13 @@ function escapeRegExp(str: string): string {
 /**
  * Detects payment source and returns the account ID + cleaned text with payment phrases removed
  */
-function extractPaymentSource(text: string): { account?: MoneyLocationId; cleanedText: string } {
+function extractPaymentSource(text: string): { account: MoneyLocationId; cleanedText: string } {
   // Cash matches: "with cash", "using cash", "paid in cash", "in cash", "from cash", "by cash", "cash in hand", standalone "cash"
   const cashPattern = /\b(?:(?:with|using|paid in|in|from|via|by)\s+)?cash(?:\s+in\s+hand)?\b/i;
   // Bank matches: "with bank", "using bank", "from bank", "from my bank account", "using my bank account", "paid from bank", "bank account", "banking", "upi", "gpay", "google pay", "phonepe", "paytm", "card", "debit card", "credit card", "online"
   const bankPattern = /\b(?:(?:with|using|paid from|from|via|by)\s+)?(?:(?:my\s+)?bank(?:\s+account)?|banking|net\s*banking|upi|gpay|google\s*pay|phonepe|paytm|card|debit\s*card|credit\s*card|online)\b/i;
 
-  let account: MoneyLocationId | undefined = undefined;
+  let account: MoneyLocationId = 'acc_bank'; // Default to Bank Account per requirement
   let cleanedText = text;
 
   if (cashPattern.test(text)) {
@@ -140,7 +140,7 @@ function extractPeople(text: string, knownFriends?: string[]): string[] {
   }
 
   // 2. Extract friends from phrases like:
-  // "with Karthick and Hemanth", "with Karthick, Hemanth and Siva"
+  // "with Karthick and Hemanth", "with Karthick, Hemanth and Smith"
   // "split with Karthick and Hemanth", "between Karthick and Hemanth"
   const withMatch = text.match(/\b(?:with|between|shared with|split with)\s+([^,.;!?]+(?:\s*,\s*[^,.;!?]+)*(?:\s+(?:and|&)\s+[^,.;!?]+)?)/i);
   if (withMatch) {
@@ -154,7 +154,6 @@ function extractPeople(text: string, knownFriends?: string[]): string[] {
       const nameCand = parts[0].trim();
       const lower = nameCand.toLowerCase();
       if (lower && !RESERVED_WORDS.has(lower) && !/^\d+$/.test(lower) && nameCand.length >= 2) {
-        // Check if matches known friend case-insensitively
         const known = normalizedKnown.find(k => k.lower === lower);
         const finalName = known ? known.original : (nameCand.charAt(0).toUpperCase() + nameCand.slice(1));
         if (!detectedPeople.some(p => p.toLowerCase() === finalName.toLowerCase())) {
@@ -164,8 +163,25 @@ function extractPeople(text: string, knownFriends?: string[]): string[] {
     }
   }
 
-  // 3. Extract friends from "for <People>" if not a category word
-  // e.g. "for Karthick and Hemanth"
+  // 3. Extract friends from "to <Person>" (e.g. "lent 100 to Karthick", "gave back 100rs to Karthick")
+  const toMatch = text.match(/\bto\s+([A-Z][a-z0-9_]+(?:\s*(?:,|and|&)\s*[A-Z][a-z0-9_]+)*)\b/);
+  if (toMatch) {
+    const clause = toMatch[1];
+    const tokens = clause.split(/\s*,\s*|\s+(?:and|&|\+)\s+/i);
+    for (let token of tokens) {
+      const nameCand = token.trim().replace(/'s$/i, '').trim();
+      const lower = nameCand.toLowerCase();
+      if (lower && !RESERVED_WORDS.has(lower) && !/^\d+$/.test(lower) && nameCand.length >= 2) {
+        const known = normalizedKnown.find(k => k.lower === lower);
+        const finalName = known ? known.original : (nameCand.charAt(0).toUpperCase() + nameCand.slice(1));
+        if (!detectedPeople.some(p => p.toLowerCase() === finalName.toLowerCase())) {
+          detectedPeople.push(finalName);
+        }
+      }
+    }
+  }
+
+  // 4. Extract friends from "for <People>" if capitalized and not a reserved word
   const forMatch = text.match(/\bfor\s+([A-Z][a-z0-9_]+(?:\s*(?:,|and|&)\s*[A-Z][a-z0-9_]+)*)\b/);
   if (forMatch) {
     const clause = forMatch[1];
@@ -183,7 +199,7 @@ function extractPeople(text: string, knownFriends?: string[]): string[] {
     }
   }
 
-  // 4. Possessive names: "100 was Karthick's"
+  // 5. Possessive names: "100 was Karthick's"
   const possessiveMatches = text.matchAll(/\b([A-Za-z][a-z0-9_]+)'s\b/gi);
   for (const m of possessiveMatches) {
     const nameCand = m[1].trim();
@@ -218,14 +234,65 @@ function extractCategory(text: string): StandardCategory {
 }
 
 /**
- * Parses free text natural language financial entries
+ * Extracts clean, meaningful purchase/item note, stripping intent words, amounts, accounts, and friends
+ */
+function extractCleanNote(rawText: string, people: string[]): string {
+  let text = rawText;
+
+  // 1. Remove amounts (e.g. "100rs", "₹100", "100 rupees", "100 rs", "100")
+  text = text.replace(/(?:₹|rs\.?|inr)?\s*\d+(?:\.\d+)?(?:\s*(?:rs\.?|rupees|rupee|inr|bucks|buck))?/gi, ' ');
+
+  // 2. Remove payment phrases
+  const paymentPhrases = [
+    /\b(?:with|using|paid in|in|from|via|by)?\s*cash(?:\s+in\s+hand)?\b/gi,
+    /\b(?:with|using|paid from|from|via|by)?\s*(?:(?:my\s+)?bank(?:\s+account)?|banking|net\s*banking|upi|gpay|google\s*pay|phonepe|paytm|card|debit\s*card|credit\s*card|online)\b/gi,
+  ];
+  for (const p of paymentPhrases) {
+    text = text.replace(p, ' ');
+  }
+
+  // 3. Remove friend clauses & names
+  text = text.replace(/\b(?:with|between|shared with|split with)\s+[^,.;!?]+/gi, ' ');
+  for (const person of people) {
+    const reg = new RegExp(`\\b${escapeRegExp(person)}(?:'s)?\\b`, 'gi');
+    text = text.replace(reg, ' ');
+  }
+  text = text.replace(/\bto\s+[A-Z][a-z0-9_]+\b/g, ' ');
+  text = text.replace(/\bfrom\s+[A-Z][a-z0-9_]+\b/g, ' ');
+
+  // 4. Remove action / intent prefixes
+  const intentPhrases = [
+    /\b(?:gave\s+back|give\s+back|given\s+back|paid\s+back|pay\s+back|payback)\b/gi,
+    /\b(?:repaid|repay|repaying|repayment|returned\s+money|returned|return|returning|settled|settle|cleared|clear\s+my\s+debt)\b/gi,
+    /\b(?:lent\s+money\s+to|lent|lending|lend|loaned|loan|gave\s+money\s+to|gave|give)\b/gi,
+    /\b(?:received|pocket\s+money|allowance|salary|got)\b/gi,
+    /\b(?:spent\s+on|spent\s+for|spent|spend\s+on|spend\s+for|spend)\b/gi,
+    /\b(?:paid\s+for|paid\s+on|paid|pay\s+for|pay\s+on|pay)\b/gi,
+    /\b(?:split|shared)\b/gi,
+  ];
+  for (const ip of intentPhrases) {
+    text = text.replace(ip, ' ');
+  }
+
+  // 5. Remove common prepositions, conjunctions, and articles
+  text = text.replace(/\b(?:on|for|to|from|in|at|by|with|into|of|a|an|the|and|or|via)\b/gi, ' ');
+  text = text.replace(/&/g, ' ');
+
+  // 6. Clean punctuation & extra whitespace
+  text = text.replace(/[.,;!?_\\/+\\-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  return text;
+}
+
+/**
+ * Parses free text natural language financial entries (Quick Entry)
  */
 export function parseNaturalLanguage(text: string, knownFriends?: string[]): ParsedNaturalLanguage | null {
   if (!text || text.trim().length === 0) return null;
 
   const rawText = text.trim();
 
-  // 1. Detect and extract payment source first
+  // 1. Detect and extract payment source first (defaults to 'acc_bank')
   const { account, cleanedText } = extractPaymentSource(rawText);
   const lower = cleanedText.toLowerCase();
 
@@ -249,74 +316,59 @@ export function parseNaturalLanguage(text: string, knownFriends?: string[]): Par
   // 4. Extract ALL people
   const detectedPeople = extractPeople(cleanedText, knownFriends);
 
-  // Check 1: LOAN REPAYMENT
-  if (/\b(repaid|repay|loan repayment|returned loan|repaid loan)\b/i.test(lower)) {
-    const fromMatch = cleanedText.match(/(?:from|by)\s+([A-Z][a-z0-9_]+|[a-zA-Z]+)/i) || cleanedText.match(/^([A-Z][a-z0-9_]+)\s+repaid/i);
-    let personName = detectedPeople[0];
-    if (fromMatch) {
-      const cand = fromMatch[1].trim();
-      if (!RESERVED_WORDS.has(cand.toLowerCase())) {
-        personName = cand.charAt(0).toUpperCase() + cand.slice(1);
-        if (!detectedPeople.includes(personName)) {
-          detectedPeople.push(personName);
-        }
-      }
+  // PRIORITY 1: REPAYMENT INTENT
+  // Keywords: "gave back", "give back", "paid back", "pay back", "payback", "repaid", "repay", "repayment", "returned", "return", "settled", "settle", "cleared"
+  const REPAYMENT_REGEX = /\b(gave\s+back|give\s+back|given\s+back|paid\s+back|pay\s+back|payback|repaid|repay|repaying|repayment|returned\s+money|returned|return|returning|settled|settle|cleared|clear\s+my\s+debt)\b/i;
+  if (REPAYMENT_REGEX.test(lower)) {
+    const toMatch = cleanedText.match(/\b(?:to)\s+([A-Z][a-z0-9_]+|[a-zA-Z]+)/i) ||
+                    cleanedText.match(/\b(?:from|by)\s+([A-Z][a-z0-9_]+|[a-zA-Z]+)/i) ||
+                    cleanedText.match(/^([A-Z][a-z0-9_]+)\s+repaid/i);
+    let personName = toMatch ? toMatch[1].trim() : detectedPeople[0];
+    if (personName) {
+      personName = personName.charAt(0).toUpperCase() + personName.slice(1);
     }
+    const peopleList = personName ? [personName] : detectedPeople;
+    const cleanNote = extractCleanNote(rawText, peopleList);
+
     return {
-      type: 'LOAN_REPAYMENT',
+      type: 'BORROW_REPAYMENT',
       amount,
       category: 'Other',
       account,
-      people: detectedPeople,
+      people: peopleList,
       personName,
-      note: rawText,
-      confidence: 0.9,
+      note: cleanNote,
+      confidence: 0.95,
       rawText,
     };
   }
 
-  // Check 2: REIMBURSEMENT
-  if (/\b(reimbursement|reimbursed|settled split|split settled|payback)\b/i.test(lower)) {
-    const personName = detectedPeople[0] || undefined;
-    return {
-      type: 'REIMBURSEMENT',
-      amount,
-      category: 'Other',
-      account,
-      people: detectedPeople,
-      personName,
-      note: rawText,
-      confidence: 0.9,
-      rawText,
-    };
-  }
-
-  // Check 3: LENDING
-  if (/\b(lent|lend|borrowed to)\b/i.test(lower) || (/\bgave\b/i.test(lower) && /\bto\b/i.test(lower)) || (/\bloan\b/i.test(lower) && !/\brepaid\b/i.test(lower))) {
-    const toMatch = cleanedText.match(/(?:to)\s+([A-Z][a-z0-9_]+|[a-zA-Z]+)/i);
-    let personName = detectedPeople[0];
-    if (!personName && toMatch) {
-      const cand = toMatch[1].trim();
-      if (!RESERVED_WORDS.has(cand.toLowerCase())) {
-        personName = cand.charAt(0).toUpperCase() + cand.slice(1);
-        detectedPeople.push(personName);
-      }
+  // PRIORITY 2: LENDING INTENT
+  // Keywords: "lent", "lend", "lending", "loaned", "loan", "gave to", "give to", "gave"
+  const LENDING_REGEX = /\b(lent\s+money\s+to|lent|lending|lend|loaned|loan|gave\s+money\s+to|gave|give)\b/i;
+  if (LENDING_REGEX.test(lower)) {
+    const toMatch = cleanedText.match(/\b(?:to|for)\s+([A-Z][a-z0-9_]+|[a-zA-Z]+)/i);
+    let personName = toMatch ? toMatch[1].trim() : detectedPeople[0];
+    if (personName) {
+      personName = personName.charAt(0).toUpperCase() + personName.slice(1);
     }
+    const peopleList = personName ? [personName] : detectedPeople;
+    const cleanNote = extractCleanNote(rawText, peopleList);
 
     return {
       type: 'LENDING',
       amount,
       category: 'Other',
       account,
-      people: detectedPeople,
+      people: peopleList,
       personName,
-      note: rawText,
-      confidence: personName ? 0.95 : 0.8,
+      note: cleanNote,
+      confidence: personName ? 0.95 : 0.85,
       rawText,
     };
   }
 
-  // Check 4: MONEY_RECEIVED / BUDGET
+  // Check: MONEY_RECEIVED / BUDGET
   if (/\b(received|allowance|pocket money|salary|from dad|from mom|budget)\b/i.test(lower) || (/\bgot\b/i.test(lower) && !/\breimbursement\b/i.test(lower))) {
     const isMonthlyBudget = /\b(budget|monthly budget|allowance|september|october|november|december|january|february|march|april|may|june|july|august)\b/i.test(lower);
     const fromMatch = cleanedText.match(/(?:from)\s+([A-Z][a-z0-9_]+|[a-zA-Z]+)/i);
@@ -331,6 +383,7 @@ export function parseNaturalLanguage(text: string, knownFriends?: string[]): Par
       personName = detectedPeople[0];
     }
     const peopleList = personName ? [personName] : detectedPeople;
+    const cleanNote = extractCleanNote(rawText, peopleList);
 
     return {
       type: 'MONEY_RECEIVED',
@@ -340,16 +393,16 @@ export function parseNaturalLanguage(text: string, knownFriends?: string[]): Par
       people: peopleList,
       personName,
       isMonthlyBudget,
-      note: rawText,
+      note: cleanNote,
       confidence: 0.9,
       rawText,
     };
   }
 
-  // Check 5: SPLIT vs EXPENSE
+  // PRIORITY 3: SPLIT vs EXPENSE
   // A transaction is a SPLIT if:
-  // - There are 1 or more detected people! OR
-  // - Keyword 'split' or 'shared' is explicitly in text
+  // - 1 or more actual people detected
+  // - Or keywords 'split' / 'shared'
   const isSplitIntent = detectedPeople.length > 0 || /\b(split|shared)\b/i.test(lower);
 
   if (isSplitIntent && detectedPeople.length > 0) {
@@ -375,6 +428,8 @@ export function parseNaturalLanguage(text: string, knownFriends?: string[]): Par
       userShare = amount - splits.reduce((sum, s) => sum + s.amount, 0);
     }
 
+    const cleanNote = extractCleanNote(rawText, detectedPeople);
+
     return {
       type: 'SPLIT',
       amount,
@@ -384,20 +439,22 @@ export function parseNaturalLanguage(text: string, knownFriends?: string[]): Par
       people: detectedPeople,
       personName: detectedPeople[0],
       splits,
-      note: rawText,
+      note: cleanNote,
       confidence: 0.9,
       rawText,
     };
   }
 
-  // Default: Standard PERSONAL EXPENSE
+  // PRIORITY 4: Standard PERSONAL EXPENSE
+  const cleanNote = extractCleanNote(rawText, []);
+
   return {
     type: 'EXPENSE',
     amount,
     category: detectedCategory,
     account,
     people: [],
-    note: rawText,
+    note: cleanNote,
     confidence: 0.85,
     rawText,
   };

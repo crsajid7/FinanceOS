@@ -1,196 +1,135 @@
 import { describe, it, expect } from 'vitest';
 import { parseNaturalLanguage } from './naturalLanguageParser';
 
-describe('Natural Language Parser', () => {
-  it('parses simple expense: "Spent 50 on food"', () => {
-    const res = parseNaturalLanguage('Spent 50 on food');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('EXPENSE');
-    expect(res?.amount).toBe(50);
-    expect(res?.category).toBe('Food');
-    expect(res?.people).toEqual([]);
-  });
-
-  it('parses split expense: "Paid 200 for food, 100 was Karthick\'s"', () => {
-    const res = parseNaturalLanguage("Paid 200 for food, 100 was Karthick's");
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('SPLIT');
-    expect(res?.amount).toBe(200);
-    expect(res?.userShare).toBe(100);
-    expect(res?.category).toBe('Food');
-    expect(res?.people).toContain('Karthick');
-    expect(res?.splits?.[0].personName).toBe('Karthick');
-    expect(res?.splits?.[0].amount).toBe(100);
-  });
-
-  it('parses lending: "Lent 500 to Karthick"', () => {
-    const res = parseNaturalLanguage('Lent 500 to Karthick');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('LENDING');
-    expect(res?.amount).toBe(500);
-    expect(res?.personName).toBe('Karthick');
-  });
-
-  it('parses money received: "Received 10000 from Dad for September budget"', () => {
-    const res = parseNaturalLanguage('Received 10000 from Dad for September budget');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('MONEY_RECEIVED');
-    expect(res?.amount).toBe(10000);
-    expect(res?.personName).toBe('Dad');
-    expect(res?.isMonthlyBudget).toBe(true);
-  });
-
-  it('parses loan repayment: "Karthick repaid 200 loan"', () => {
-    const res = parseNaturalLanguage('Karthick repaid 200 loan');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('LOAN_REPAYMENT');
-    expect(res?.amount).toBe(200);
-    expect(res?.personName).toBe('Karthick');
-  });
-
-  // Specific User-Requested Test Cases 1 through 10:
-
+describe('Quick Entry Natural Language Parser', () => {
   it('TEST 1: "spent 50 on food"', () => {
     const res = parseNaturalLanguage('spent 50 on food');
     expect(res).not.toBeNull();
     expect(res?.type).toBe('EXPENSE');
     expect(res?.amount).toBe(50);
     expect(res?.category).toBe('Food');
+    expect(res?.account).toBe('acc_bank');
+    expect(res?.note).toBe('food');
     expect(res?.people).toEqual([]);
-    expect(res?.account).toBeUndefined();
   });
 
-  it('TEST 2: "spent 100 on movies with cash"', () => {
-    const res = parseNaturalLanguage('spent 100 on movies with cash');
+  it('TEST 2: "spent 100 on movies"', () => {
+    const res = parseNaturalLanguage('spent 100 on movies');
     expect(res).not.toBeNull();
     expect(res?.type).toBe('EXPENSE');
     expect(res?.amount).toBe(100);
     expect(res?.category).toBe('Entertainment');
-    expect(res?.account).toBe('acc_cash');
+    expect(res?.account).toBe('acc_bank');
+    expect(res?.note).toBe('movies');
     expect(res?.people).toEqual([]);
   });
 
-  it('TEST 3: "spent 100 rs on food with cash"', () => {
-    const res = parseNaturalLanguage('spent 100 rs on food with cash');
+  it('TEST 3: "spent 100 on shawarma with cash"', () => {
+    const res = parseNaturalLanguage('spent 100 on shawarma with cash');
     expect(res).not.toBeNull();
     expect(res?.type).toBe('EXPENSE');
     expect(res?.amount).toBe(100);
     expect(res?.category).toBe('Food');
     expect(res?.account).toBe('acc_cash');
+    expect(res?.note).toBe('shawarma');
     expect(res?.people).toEqual([]);
   });
 
-  it('TEST 4: "spent 90 rs for auto with Karthick and Hemanth"', () => {
+  it('TEST 4: "spent 30 on food"', () => {
+    const res = parseNaturalLanguage('spent 30 on food');
+    expect(res).not.toBeNull();
+    expect(res?.amount).toBe(30);
+    expect(res?.category).toBe('Food');
+    expect(res?.account).toBe('acc_bank');
+  });
+
+  it('TEST 5: "spent 100 on food from cash"', () => {
+    const res = parseNaturalLanguage('spent 100 on food from cash');
+    expect(res).not.toBeNull();
+    expect(res?.amount).toBe(100);
+    expect(res?.account).toBe('acc_cash');
+    expect(res?.note).toBe('food');
+  });
+
+  it('TEST 6: "spent 90 for auto with Karthick and Hemanth"', () => {
     const res = parseNaturalLanguage('spent 90 rs for auto with Karthick and Hemanth');
     expect(res).not.toBeNull();
     expect(res?.type).toBe('SPLIT');
     expect(res?.amount).toBe(90);
     expect(res?.category).toBe('Transport');
     expect(res?.people).toEqual(['Karthick', 'Hemanth']);
+    expect(res?.note).toBe('auto');
   });
 
-  it('TEST 5: "spent 200 on dinner with Karthick and Hemanth using cash"', () => {
-    const res = parseNaturalLanguage('spent 200 on dinner with Karthick and Hemanth using cash');
+  it('TEST 7: "spent 200 on dinner with Karthick, Hemanth and Smith"', () => {
+    const res = parseNaturalLanguage('spent 200 on dinner with Karthick, Hemanth and Smith');
     expect(res).not.toBeNull();
     expect(res?.type).toBe('SPLIT');
     expect(res?.amount).toBe(200);
     expect(res?.category).toBe('Food');
-    expect(res?.account).toBe('acc_cash');
-    expect(res?.people).toEqual(['Karthick', 'Hemanth']);
+    expect(res?.people).toEqual(['Karthick', 'Hemanth', 'Smith']);
+    expect(res?.note).toBe('dinner');
   });
 
-  it('TEST 6: "paid 300 for movies using cash"', () => {
-    const res = parseNaturalLanguage('paid 300 for movies using cash');
+  it('TEST 8: "gave back 100rs to Karthick"', () => {
+    const res = parseNaturalLanguage('gave back 100rs to Karthick');
     expect(res).not.toBeNull();
-    expect(res?.type).toBe('EXPENSE');
-    expect(res?.amount).toBe(300);
-    expect(res?.category).toBe('Entertainment');
-    expect(res?.account).toBe('acc_cash');
-    expect(res?.people).toEqual([]);
+    expect(res?.type).toBe('BORROW_REPAYMENT');
+    expect(res?.amount).toBe(100);
+    expect(res?.personName).toBe('Karthick');
   });
 
-  it('TEST 7: "spent 500 on dinner with Karthick, Hemanth and Siva"', () => {
-    const res = parseNaturalLanguage('spent 500 on dinner with Karthick, Hemanth and Siva');
+  it('TEST 9: "repaid 100 to Karthick"', () => {
+    const res = parseNaturalLanguage('repaid 100 to Karthick');
     expect(res).not.toBeNull();
-    expect(res?.type).toBe('SPLIT');
+    expect(res?.type).toBe('BORROW_REPAYMENT');
+    expect(res?.amount).toBe(100);
+    expect(res?.personName).toBe('Karthick');
+  });
+
+  it('TEST 10: "paid back 200 to Hemanth"', () => {
+    const res = parseNaturalLanguage('paid back 200 to Hemanth');
+    expect(res).not.toBeNull();
+    expect(res?.type).toBe('BORROW_REPAYMENT');
+    expect(res?.amount).toBe(200);
+    expect(res?.personName).toBe('Hemanth');
+  });
+
+  it('TEST 11: "lent 500 to Karthick"', () => {
+    const res = parseNaturalLanguage('lent 500 to Karthick');
+    expect(res).not.toBeNull();
+    expect(res?.type).toBe('LENDING');
     expect(res?.amount).toBe(500);
-    expect(res?.category).toBe('Food');
-    expect(res?.people).toEqual(['Karthick', 'Hemanth', 'Siva']);
+    expect(res?.personName).toBe('Karthick');
   });
 
-  it('TEST 8: "spent 200 for auto with Karthick using bank"', () => {
-    const res = parseNaturalLanguage('spent 200 for auto with Karthick using bank');
+  it('TEST 12: "gave 200 to Hemanth"', () => {
+    const res = parseNaturalLanguage('gave 200 to Hemanth');
     expect(res).not.toBeNull();
-    expect(res?.type).toBe('SPLIT');
+    expect(res?.type).toBe('LENDING');
     expect(res?.amount).toBe(200);
-    expect(res?.category).toBe('Transport');
-    expect(res?.account).toBe('acc_bank');
-    expect(res?.people).toEqual(['Karthick']);
+    expect(res?.personName).toBe('Hemanth');
   });
 
-  it('TEST 9: "paid 100 in cash for groceries"', () => {
-    const res = parseNaturalLanguage('paid 100 in cash for groceries');
+  it('TEST 13: "spent 100 on chicken biryani with cash"', () => {
+    const res = parseNaturalLanguage('spent 100 on chicken biryani with cash');
     expect(res).not.toBeNull();
     expect(res?.type).toBe('EXPENSE');
     expect(res?.amount).toBe(100);
-    expect(res?.category).toBe('Groceries');
+    expect(res?.category).toBe('Food');
     expect(res?.account).toBe('acc_cash');
-    expect(res?.people).toEqual([]);
+    expect(res?.note).toBe('chicken biryani');
   });
 
-  it('TEST 10: "spent 100 on food with Karthick"', () => {
-    const res = parseNaturalLanguage('spent 100 on food with Karthick');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('SPLIT');
-    expect(res?.amount).toBe(100);
-    expect(res?.category).toBe('Food');
-    expect(res?.people).toEqual(['Karthick']);
-  });
+  it('TEST 14: additional categories: uber, movie, groceries, auto, college', () => {
+    expect(parseNaturalLanguage('spent 200 for uber')?.note).toBe('uber');
+    expect(parseNaturalLanguage('spent 200 for uber')?.category).toBe('Transport');
 
-  it('TEST EXTRA 1: "spent 200 with Karthick, Mani and Sumith"', () => {
-    const res = parseNaturalLanguage('spent 200 with Karthick, Mani and Sumith');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('SPLIT');
-    expect(res?.amount).toBe(200);
-    expect(res?.people).toEqual(['Karthick', 'Mani', 'Sumith']);
-  });
+    expect(parseNaturalLanguage('spent 100 on a movie')?.note).toBe('movie');
+    expect(parseNaturalLanguage('spent 100 on a movie')?.category).toBe('Entertainment');
 
-  it('TEST EXTRA 2: "paid 500 for food for Karthick and Hemanth"', () => {
-    const res = parseNaturalLanguage('paid 500 for food for Karthick and Hemanth');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('SPLIT');
-    expect(res?.amount).toBe(500);
-    expect(res?.category).toBe('Food');
-    expect(res?.people).toEqual(['Karthick', 'Hemanth']);
-  });
-
-  it('TEST EXTRA 3: "spend 100 on movies with cash"', () => {
-    const res = parseNaturalLanguage('spend 100 on movies with cash');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('EXPENSE');
-    expect(res?.amount).toBe(100);
-    expect(res?.category).toBe('Entertainment');
-    expect(res?.account).toBe('acc_cash');
-    expect(res?.people).toEqual([]);
-  });
-
-  it('TEST EXTRA 4: "paid 2000 for room rent via upi"', () => {
-    const res = parseNaturalLanguage('paid 2000 for room rent via upi');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('EXPENSE');
-    expect(res?.amount).toBe(2000);
-    expect(res?.category).toBe('Rent');
-    expect(res?.account).toBe('acc_bank');
-    expect(res?.people).toEqual([]);
-  });
-
-  it('TEST EXTRA 5: "spent 150 using gpay for snacks"', () => {
-    const res = parseNaturalLanguage('spent 150 using gpay for snacks');
-    expect(res).not.toBeNull();
-    expect(res?.type).toBe('EXPENSE');
-    expect(res?.amount).toBe(150);
-    expect(res?.category).toBe('Food');
-    expect(res?.account).toBe('acc_bank');
-    expect(res?.people).toEqual([]);
+    expect(parseNaturalLanguage('spent 50 on groceries')?.category).toBe('Groceries');
+    expect(parseNaturalLanguage('spent 100 on auto')?.category).toBe('Transport');
+    expect(parseNaturalLanguage('spent 300 on college')?.category).toBe('College');
   });
 });

@@ -35,7 +35,7 @@ interface SpentModalProps {
   onClose: () => void;
 }
 
-type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'REPAY_FRIEND' | 'NL';
+type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'REPAY_FRIEND';
 
 export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   const { transactions, people, addTransaction, recordBorrowRepayment, accounts, verifyBalance, ensurePerson } = useFinance();
@@ -87,9 +87,6 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
       setNlError('');
       setErrorMsg('');
       setSelectedAccountId('acc_bank');
-      setTimeout(() => {
-        amountInputRef.current?.focus();
-      }, 50);
     }
   }, [isOpen]);
 
@@ -155,10 +152,12 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
   const handleParseNL = async () => {
     setNlError('');
+    if (!nlText.trim()) return;
+
     const knownFriendNames = (people || []).map(p => p.name);
     const parsed = parseNaturalLanguage(nlText, knownFriendNames);
     if (!parsed) {
-      setNlError('Could not understand. Try: "Spent 50 on food" or "Lent 500 to Karthick"');
+      setNlError('Could not understand. Try: "spent 100 on shawarma with cash"');
       return;
     }
 
@@ -166,9 +165,11 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     setSelectedCategory(parsed.category || 'Food');
     setNote(parsed.note || '');
 
-    // Set payment source if explicitly detected
+    // Set payment source: default to bank unless cash explicitly parsed
     if (parsed.account) {
       setSelectedAccountId(parsed.account);
+    } else {
+      setSelectedAccountId('acc_bank');
     }
 
     if (parsed.type === 'SPLIT') {
@@ -213,6 +214,13 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
         const p = await ensurePerson(parsed.personName);
         setLendingPersonId(p.id);
         setLendingPersonName(p.name);
+      }
+    } else if (parsed.type === 'BORROW_REPAYMENT' || parsed.type === 'LOAN_REPAYMENT') {
+      setMode('REPAY_FRIEND');
+      if (parsed.personName) {
+        const p = await ensurePerson(parsed.personName);
+        setRepayPersonId(p.id);
+        setRepayPersonName(p.name);
       }
     } else {
       setMode('EXPENSE');
@@ -336,7 +344,6 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
               {mode === 'SPLIT' && 'Friend Split'}
               {mode === 'LENDING' && 'Lend Money'}
               {mode === 'REPAY_FRIEND' && 'Repay Friend'}
-              {mode === 'NL' && 'Natural Language Entry'}
             </h2>
           </div>
 
@@ -398,55 +405,66 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Repay</span>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode('NL');
-              setTimeout(() => nlInputRef.current?.focus(), 50);
-            }}
-            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center space-x-1 transition-all ${
-              mode === 'NL'
-                ? 'bg-black/10 dark:bg-black/10 text-indigo-500 border-t-2 border-indigo-500 shadow-sm'
-                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
-            }`}
-            title="Type naturally e.g. Spent 50 on food"
-          >
-            <Wand2 className="w-3.5 h-3.5" />
-          </button>
         </div>
 
         {/* Modal Body - <div> replaces <form> to prevent browser IME auto-advance and implicit submission */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
           
-          {/* Natural Language Assist Bar */}
-          {mode === 'NL' && (
-            <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1">
+          {/* Quick Entry Card - Always visible at top of modal body */}
+          <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1.5">
                 <Wand2 className="w-3.5 h-3.5" />
-                <span>Type naturally in plain English</span>
+                <span>Quick Entry</span>
               </label>
-              <div className="flex space-x-2">
-                <input
-                  ref={nlInputRef}
-                  type="text"
-                  tabIndex={-1}
-                  value={nlText}
-                  onChange={e => setNlText(e.target.value)}
-                  placeholder="e.g. Spent 50 on food, or Paid 200 for food 100 was Karthick's"
-                  className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs text-[var(--card-text-main)] px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleParseNL}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1"
-                >
-                  <span>Parse</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-              {nlError && <p className="text-xs text-rose-500">{nlError}</p>}
+              <span className="text-[10px] text-indigo-400 font-mono">Type & press enter or parse</span>
             </div>
-          )}
+            <div className="flex space-x-2">
+              <input
+                ref={nlInputRef}
+                type="text"
+                tabIndex={-1}
+                enterKeyHint="go"
+                value={nlText}
+                onChange={e => setNlText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                    handleParseNL();
+                  }
+                }}
+                onKeyUp={e => {
+                  if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                  }
+                }}
+                onBeforeInput={(e: React.FormEvent<HTMLInputElement>) => {
+                  const nativeEvent = e.nativeEvent as InputEvent;
+                  if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
+                    handleParseNL();
+                  }
+                }}
+                placeholder="e.g. spent 100 on shawarma with cash"
+                className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs text-[var(--card-text-main)] px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500 shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={handleParseNL}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1 shadow-sm transition-colors"
+                title="Parse Quick Entry"
+              >
+                <span>Parse</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+            {nlError && <p className="text-xs text-rose-500 font-semibold">{nlError}</p>}
+          </div>
 
           {/* Large Amount Input */}
           <div className="text-center py-2">
