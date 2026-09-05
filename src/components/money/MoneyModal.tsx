@@ -15,6 +15,7 @@ import { useFinance } from '../../context/FinanceContext';
 import { MoneyLocationId } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
 import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
+import { useSwipeNavigation } from '../../hooks/useSwipeNavigation';
 
 interface MoneyModalProps {
   isOpen: boolean;
@@ -33,6 +34,8 @@ const COMMON_SOURCES = [
 ];
 
 type MoneyTab = 'PARSING' | 'INCOME' | 'BORROWED';
+
+const MONEY_TABS: MoneyTab[] = ['PARSING', 'INCOME', 'BORROWED'];
 
 export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
   const { addTransaction, recordBorrowedMoney, people, addPerson, accounts, ensurePerson } = useFinance();
@@ -56,6 +59,29 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
 
   const amountInputRef = useRef<HTMLInputElement>(null);
   const nlInputRef = useRef<HTMLInputElement>(null);
+  const modalContentRef = useRef<HTMLDivElement>(null);
+
+  const handleNextMoneyTab = () => {
+    const currentIndex = MONEY_TABS.indexOf(tab);
+    if (currentIndex < MONEY_TABS.length - 1) {
+      setTab(MONEY_TABS[currentIndex + 1]);
+    }
+  };
+
+  const handlePrevMoneyTab = () => {
+    const currentIndex = MONEY_TABS.indexOf(tab);
+    if (currentIndex > 0) {
+      setTab(MONEY_TABS[currentIndex - 1]);
+    }
+  };
+
+  useSwipeNavigation({
+    onSwipeLeft: handleNextMoneyTab,
+    onSwipeRight: handlePrevMoneyTab,
+    disabled: !isOpen,
+    threshold: 60,
+    targetRef: modalContentRef,
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -197,7 +223,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="w-full sm:max-w-md theme-card rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div ref={modalContentRef} className="w-full sm:max-w-md theme-card rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
         
         {/* Header */}
         <div className="px-5 py-4 border-b border-[var(--card-divider)] flex items-center justify-between bg-black/5 dark:bg-black/5">

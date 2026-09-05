@@ -13,6 +13,10 @@ import { TransactionDetailModal } from './components/common/TransactionDetailMod
 import { ProfileModal } from './components/profile/ProfileModal';
 import { Transaction } from './types/finance';
 
+import { useSwipeNavigation } from './hooks/useSwipeNavigation';
+
+const MAIN_TABS: TabType[] = ['home', 'history', 'people', 'month'];
+
 const MainAppContent: React.FC = () => {
   // Navigation State
   const [currentTab, setCurrentTab] = useState<TabType>('home');
@@ -26,6 +30,34 @@ const MainAppContent: React.FC = () => {
   // Detail Modal
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
+  const isAnyModalOpen =
+    isSpentOpen ||
+    isMoneyOpen ||
+    isWhereDidMoneyGoOpen ||
+    isProfileOpen ||
+    selectedTransaction !== null;
+
+  const handleNextTab = () => {
+    const currentIndex = MAIN_TABS.indexOf(currentTab);
+    if (currentIndex < MAIN_TABS.length - 1) {
+      setCurrentTab(MAIN_TABS[currentIndex + 1]);
+    }
+  };
+
+  const handlePrevTab = () => {
+    const currentIndex = MAIN_TABS.indexOf(currentTab);
+    if (currentIndex > 0) {
+      setCurrentTab(MAIN_TABS[currentIndex - 1]);
+    }
+  };
+
+  useSwipeNavigation({
+    onSwipeLeft: handleNextTab,
+    onSwipeRight: handlePrevTab,
+    disabled: isAnyModalOpen,
+    threshold: 60,
+  });
+
   return (
     <AppShell
       currentTab={currentTab}
@@ -34,31 +66,33 @@ const MainAppContent: React.FC = () => {
       onOpenMoney={() => setIsMoneyOpen(true)}
       onOpenProfile={() => setIsProfileOpen(true)}
     >
-      {currentTab === 'home' && (
-        <HomeScreen
-          onOpenSpent={() => setIsSpentOpen(true)}
-          onOpenMoney={() => setIsMoneyOpen(true)}
-          onOpenWhereDidMoneyGo={() => setIsWhereDidMoneyGoOpen(true)}
-          onNavigateToPeople={() => setCurrentTab('people')}
-          onNavigateToHistory={() => setCurrentTab('history')}
-        />
-      )}
+      <div key={currentTab} className="animate-in fade-in duration-150">
+        {currentTab === 'home' && (
+          <HomeScreen
+            onOpenSpent={() => setIsSpentOpen(true)}
+            onOpenMoney={() => setIsMoneyOpen(true)}
+            onOpenWhereDidMoneyGo={() => setIsWhereDidMoneyGoOpen(true)}
+            onNavigateToPeople={() => setCurrentTab('people')}
+            onNavigateToHistory={() => setCurrentTab('history')}
+          />
+        )}
 
-      {currentTab === 'history' && (
-        <HistoryScreen
-          onSelectTransaction={tx => setSelectedTransaction(tx)}
-        />
-      )}
+        {currentTab === 'history' && (
+          <HistoryScreen
+            onSelectTransaction={tx => setSelectedTransaction(tx)}
+          />
+        )}
 
-      {currentTab === 'people' && (
-        <PeopleScreen />
-      )}
+        {currentTab === 'people' && (
+          <PeopleScreen />
+        )}
 
-      {currentTab === 'month' && (
-        <MonthScreen
-          onOpenWhereDidMoneyGo={() => setIsWhereDidMoneyGoOpen(true)}
-        />
-      )}
+        {currentTab === 'month' && (
+          <MonthScreen
+            onOpenWhereDidMoneyGo={() => setIsWhereDidMoneyGoOpen(true)}
+          />
+        )}
+      </div>
 
       {/* Global Modals */}
       <SpentModal
