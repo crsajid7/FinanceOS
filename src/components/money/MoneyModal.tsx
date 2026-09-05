@@ -7,10 +7,14 @@ import {
   HandCoins,
   Plus,
   ArrowDownLeft,
+  Wand2,
+  ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { MoneyLocationId } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
+import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
 
 interface MoneyModalProps {
   isOpen: boolean;
@@ -28,10 +32,12 @@ const COMMON_SOURCES = [
   'Other',
 ];
 
+type MoneyTab = 'PARSING' | 'INCOME' | 'BORROWED';
+
 export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
-  const { addTransaction, recordBorrowedMoney, people, addPerson, accounts } = useFinance();
+  const { addTransaction, recordBorrowedMoney, people, addPerson, accounts, ensurePerson } = useFinance();
   
-  const [tab, setTab] = useState<'INCOME' | 'BORROWED'>('INCOME');
+  const [tab, setTab] = useState<MoneyTab>('INCOME');
   const [amountStr, setAmountStr] = useState<string>('');
   const [selectedSource, setSelectedSource] = useState<string>('Dad');
   const [customSource, setCustomSource] = useState<string>('');
@@ -44,7 +50,12 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
   const [borrowPersonName, setBorrowPersonName] = useState<string>('');
   const [newFriendName, setNewFriendName] = useState<string>('');
 
+  // Parsing tab specific
+  const [nlText, setNlText] = useState<string>('');
+  const [nlError, setNlError] = useState<string>('');
+
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const nlInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -58,11 +69,21 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
       setBorrowPersonId('');
       setBorrowPersonName('');
       setNewFriendName('');
+      setNlText('');
+      setNlError('');
       setTimeout(() => {
         amountInputRef.current?.focus();
       }, 50);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (tab === 'PARSING') {
+      setTimeout(() => {
+        nlInputRef.current?.focus();
+      }, 50);
+    }
+  }, [tab]);
 
   if (!isOpen) return null;
 
@@ -76,6 +97,49 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
     setBorrowPersonId(created.id);
     setBorrowPersonName(created.name);
     setNewFriendName('');
+  };
+
+  const handleParseNL = async () => {
+    setNlError('');
+    if (!nlText.trim()) return;
+
+    const knownFriendNames = (people || []).map(p => p.name);
+    const parsed = parseNaturalLanguage(nlText, knownFriendNames);
+    if (!parsed) {
+      setNlError('Could not understand. Try: "received 500 from Dad into bank"');
+      return;
+    }
+
+    setAmountStr(String(parsed.amount));
+    if (parsed.account) {
+      setSelectedAccountId(parsed.account);
+    } else {
+      setSelectedAccountId('acc_bank');
+    }
+    setNote(parsed.note || '');
+
+    const isBorrow = /\b(borrowed|borrow|borrowing|loan from|took from|taken from)\b/i.test(nlText);
+
+    if (isBorrow) {
+      setTab('BORROWED');
+      if (parsed.personName) {
+        const p = await ensurePerson(parsed.personName);
+        setBorrowPersonId(p.id);
+        setBorrowPersonName(p.name);
+      }
+    } else {
+      setTab('INCOME');
+      if (parsed.personName) {
+        const matchedSource = COMMON_SOURCES.find(s => s.toLowerCase() === parsed.personName?.toLowerCase());
+        if (matchedSource) {
+          setSelectedSource(matchedSource);
+          setCustomSource('');
+        } else {
+          setSelectedSource('Other');
+          setCustomSource(parsed.personName);
+        }
+      }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -140,7 +204,9 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <h2 className="text-base font-black text-[var(--card-text-main)] tracking-tight">
-              {tab === 'INCOME' ? 'Record Money In' : 'Record Borrowed Money'}
+              {tab === 'PARSING' && 'Quick Entry'}
+              {tab === 'INCOME' && 'Record Money In'}
+              {tab === 'BORROWED' && 'Record Borrowed Money'}
             </h2>
           </div>
 
@@ -152,12 +218,25 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Tab Switcher: Regular Money vs Borrowed from Friend */}
-        <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2">
+        {/* Tab Switcher */}
+        <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2 overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => setTab('PARSING')}
+            aria-label="Quick Entry"
+            className={`px-3.5 py-2 text-xs font-black rounded-t-xl flex items-center justify-center whitespace-nowrap transition-all ${
+              tab === 'PARSING'
+                ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-indigo-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            <Wand2 className="w-4 h-4 text-indigo-500" />
+          </button>
+
           <button
             type="button"
             onClick={() => setTab('INCOME')}
-            className={`flex-1 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1.5 transition-all ${
+            className={`flex-1 min-w-[120px] py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1.5 whitespace-nowrap transition-all ${
               tab === 'INCOME'
                 ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-emerald-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
@@ -170,7 +249,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
           <button
             type="button"
             onClick={() => setTab('BORROWED')}
-            className={`flex-1 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1.5 transition-all ${
+            className={`flex-1 min-w-[140px] py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1.5 whitespace-nowrap transition-all ${
               tab === 'BORROWED'
                 ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-amber-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
@@ -181,8 +260,105 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+        {/* Modal Body */}
+        {tab === 'PARSING' ? (
+          <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+            <div className="space-y-4 py-2">
+              <div className="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1.5">
+                    <Wand2 className="w-4 h-4" />
+                    <span>Quick Entry</span>
+                  </label>
+                  <span className="text-[10px] text-indigo-400 font-mono">Type & press enter or parse</span>
+                </div>
+                <div className="flex space-x-2">
+                  <input
+                    ref={nlInputRef}
+                    type="text"
+                    enterKeyHint="go"
+                    value={nlText}
+                    onChange={e => setNlText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.blur();
+                        handleParseNL();
+                      }
+                    }}
+                    onKeyUp={e => {
+                      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    onBeforeInput={(e: React.FormEvent<HTMLInputElement>) => {
+                      const nativeEvent = e.nativeEvent as InputEvent;
+                      if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                        handleParseNL();
+                      }
+                    }}
+                    placeholder="e.g. received 500 from Dad into bank"
+                    className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs text-[var(--card-text-main)] px-3.5 py-3 rounded-xl focus:outline-none focus:border-indigo-500 shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleParseNL}
+                    className="px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors flex-shrink-0"
+                    title="Parse Quick Entry"
+                  >
+                    <span>Parse</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {nlError && (
+                  <div className="flex items-center space-x-1.5 text-xs text-rose-500 font-semibold pt-1">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{nlError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Suggestions / Instructions */}
+              <div className="p-3.5 bg-black/5 dark:bg-black/5 rounded-2xl border border-[var(--card-divider)] space-y-2.5">
+                <span className="text-[11px] font-bold text-[var(--card-text-sub)] uppercase tracking-wider block font-mono">
+                  Examples:
+                </span>
+                <div className="space-y-1.5 text-xs text-[var(--card-text-sub)]">
+                  <div
+                    onClick={() => setNlText('received 500 from Dad into bank')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "received 500 from Dad into bank"
+                  </div>
+                  <div
+                    onClick={() => setNlText('got 1000 salary')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "got 1000 salary"
+                  </div>
+                  <div
+                    onClick={() => setNlText('pocket money 2000 in cash')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "pocket money 2000 in cash"
+                  </div>
+                  <div
+                    onClick={() => setNlText('borrowed 500 from Karthick')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "borrowed 500 from Karthick"
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
           
           {/* Large Amount Input */}
           <div className="text-center py-2">
@@ -379,6 +555,7 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
             </button>
           </div>
         </form>
+        )}
 
       </div>
     </div>

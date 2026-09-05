@@ -370,14 +370,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           <button
             type="button"
             onClick={() => setMode('QUICK_ENTRY')}
-            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 whitespace-nowrap transition-all ${
+            aria-label="Quick Entry"
+            className={`px-3.5 py-2 text-xs font-black rounded-t-xl flex items-center justify-center whitespace-nowrap transition-all ${
               mode === 'QUICK_ENTRY'
                 ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-indigo-500 shadow-sm'
                 : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
             }`}
           >
-            <Wand2 className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Quick Entry</span>
+            <Wand2 className="w-4 h-4 text-indigo-500" />
           </button>
           <button
             type="button"
