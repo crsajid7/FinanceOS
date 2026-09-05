@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react';
+import { navigationStack } from '../services/navigationStack';
 
 export interface UseSwipeNavigationOptions {
   onSwipeLeft?: () => void;  // Finger moved RIGHT -> LEFT: NEXT page / tab
   onSwipeRight?: () => void; // Finger moved LEFT -> RIGHT: PREVIOUS page / tab
+  onEdgeBack?: () => void;   // Edge swipe LEFT -> RIGHT or RIGHT -> LEFT (e.g. close modal)
   disabled?: boolean;
   threshold?: number;       // Minimum horizontal distance in px, default 50
+  edgeThreshold?: number;   // Distance from physical screen edge in px, default 30
   targetRef?: React.RefObject<HTMLElement | null>; // Container element; if omitted, attaches to window
 }
 
@@ -35,8 +38,13 @@ export function shouldIgnoreTouch(target: EventTarget | null): boolean {
  * Global & container-level swipe navigation hook.
  *
  * Rules:
- * - Swipe right -> left (deltaX < 0): NEXT
- * - Swipe left -> right (deltaX > 0): PREVIOUS
+ * - Edge swipe (within edgeThreshold from screen edge): BACK
+ *   - Closes topmost modal/detail view without switching tabs
+ *   - Left edge -> swipe right (deltaX >= 40): BACK
+ *   - Right edge -> swipe left (deltaX <= -40): BACK
+ * - Content swipe (outside edgeThreshold):
+ *   - Swipe right -> left (deltaX < 0): NEXT page/tab
+ *   - Swipe left -> right (deltaX > 0): PREVIOUS page/tab
  * - Works anywhere on screen (inputs, buttons, cards, text, background)
  * - Vertical scroll gestures (deltaY dominant) are safely ignored
  * - Taps and button clicks continue to work normally
@@ -45,8 +53,10 @@ export function shouldIgnoreTouch(target: EventTarget | null): boolean {
 export function useSwipeNavigation({
   onSwipeLeft,
   onSwipeRight,
+  onEdgeBack,
   disabled = false,
   threshold = 50,
+  edgeThreshold = 30,
   targetRef,
 }: UseSwipeNavigationOptions) {
   const onSwipeLeftRef = useRef(onSwipeLeft);
@@ -55,8 +65,13 @@ export function useSwipeNavigation({
   const onSwipeRightRef = useRef(onSwipeRight);
   onSwipeRightRef.current = onSwipeRight;
 
+  const onEdgeBackRef = useRef(onEdgeBack);
+  onEdgeBackRef.current = onEdgeBack;
+
   const startXRef = useRef(0);
   const startYRef = useRef(0);
+  const isEdgeStartRef = useRef(false);
+  const edgeSideRef = useRef<'left' | 'right' | null>(null);
   const isIgnoredRef = useRef(false);
   const isVerticalScrollRef = useRef(false);
   const hasTriggeredRef = useRef(false);
@@ -84,6 +99,11 @@ export function useSwipeNavigation({
       hasTriggeredRef.current = false;
       startXRef.current = e.touches[0].clientX;
       startYRef.current = e.touches[0].clientY;
+
+      const isLeft = startXRef.current <= edgeThreshold;
+      const isRight = typeof window !== 'undefined' && startXRef.current >= window.innerWidth - edgeThreshold;
+      isEdgeStartRef.current = isLeft || isRight;
+      edgeSideRef.current = isLeft ? 'left' : isRight ? 'right' : null;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -98,19 +118,48 @@ export function useSwipeNavigation({
 
       // Vertical scroll protection:
       // If finger moved vertically by > 20px and vertical movement is greater than horizontal,
-      // it's a vertical scroll. Lock out swipe navigation for this gesture.
+      // it's a vertical scroll gesture. Suppress swipe navigation for this gesture.
       if (Math.abs(deltaY) > 20 && Math.abs(deltaY) >= Math.abs(deltaX)) {
         isVerticalScrollRef.current = true;
         return;
       }
 
-      // Horizontal swipe detection:
+      // 1. Edge-Back Gesture:
+      // Starts within edgeThreshold of physical screen edge
+      if (isEdgeStartRef.current) {
+        const isBackSwipe =
+          (edgeSideRef.current === 'left' && deltaX >= 40 && deltaX > Math.abs(deltaY) * 1.2) ||
+          (edgeSideRef.current === 'right' && deltaX <= -40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2);
+
+        if (isBackSwipe) {
+          hasTriggeredRef.current = true;
+          swipeJustTriggeredRef.current = true;
+
+          // Dismiss keyboard/blur active element
+          if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+
+          // Trigger edge back action (or pop navigation stack)
+          if (onEdgeBackRef.current) {
+            onEdgeBackRef.current();
+          } else if (navigationStack.hasEntries()) {
+            navigationStack.popAndExecute();
+          }
+
+          setTimeout(() => {
+            swipeJustTriggeredRef.current = false;
+          }, 200);
+          return;
+        }
+      }
+
+      // 2. Normal Horizontal Content Swipe:
       // Dominates vertical movement and exceeds threshold
-      if (Math.abs(deltaX) >= threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+      if (!isEdgeStartRef.current && Math.abs(deltaX) >= threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
         hasTriggeredRef.current = true;
         swipeJustTriggeredRef.current = true;
 
-        // Dismiss keyboard / blur active element on intentional swipe
         if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
@@ -133,6 +182,8 @@ export function useSwipeNavigation({
       isIgnoredRef.current = false;
       isVerticalScrollRef.current = false;
       hasTriggeredRef.current = false;
+      isEdgeStartRef.current = false;
+      edgeSideRef.current = null;
       setTimeout(() => {
         swipeJustTriggeredRef.current = false;
       }, 100);
@@ -159,5 +210,5 @@ export function useSwipeNavigation({
       targetElement.removeEventListener('touchcancel', handleTouchEnd as EventListener, { capture: true });
       targetElement.removeEventListener('click', handleCaptureClick as EventListener, { capture: true });
     };
-  }, [disabled, threshold, targetRef?.current]);
+  }, [disabled, threshold, edgeThreshold, targetRef?.current]);
 }

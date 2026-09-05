@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { formatINR } from '../../services/accountingEngine';
+import { useBackHandler } from '../../hooks/useBackHandler';
 import { Person, MoneyLocationId } from '../../types/finance';
 
 export const PeopleScreen: React.FC = () => {
@@ -78,6 +79,10 @@ export const PeopleScreen: React.FC = () => {
 
   const selectedPerson = people.find(p => p.id === selectedPersonId);
   const selectedBalance = personBalances.find(p => p.personId === selectedPersonId);
+
+  useBackHandler('settle-modal', !!settleModalData, () => setSettleModalData(null));
+  useBackHandler('add-person-modal', showAddPersonModal, () => setShowAddPersonModal(false));
+  useBackHandler('friend-detail', !!selectedPerson && !settleModalData && !showAddPersonModal, () => setSelectedPersonId(null));
 
   const personTransactions = transactions.filter(tx => {
     if (!selectedPersonId) return false;

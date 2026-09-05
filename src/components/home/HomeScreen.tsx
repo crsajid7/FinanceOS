@@ -17,6 +17,7 @@ import { ReconciliationModal } from './ReconciliationModal';
 import { ReservedMoneyModal } from './ReservedMoneyModal';
 import { TransferModal } from './TransferModal';
 import { OpeningBalanceModal } from './OpeningBalanceModal';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface HomeScreenProps {
   onOpenSpent: () => void;
@@ -40,6 +41,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [showReservedModal, setShowReservedModal] = useState<boolean>(false);
   const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
   const [showOpeningModal, setShowOpeningModal] = useState<boolean>(false);
+
+  useBackHandler('reserved-modal', showReservedModal, () => setShowReservedModal(false));
+  useBackHandler('reconcile-modal', showReconciliation, () => setShowReconciliation(false));
+  useBackHandler('transfer-modal', showTransferModal, () => setShowTransferModal(false));
+  useBackHandler('opening-modal', showOpeningModal, () => setShowOpeningModal(false));
 
   const recentTransactions = transactions.slice(0, 4);
 

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { shouldIgnoreTouch } from './useSwipeNavigation';
+import { navigationStack } from '../services/navigationStack';
 
 function createMockElement(
   tagName: string,
@@ -16,7 +17,7 @@ function createMockElement(
   return el as unknown as Element;
 }
 
-describe('useSwipeNavigation', () => {
+describe('useSwipeNavigation & navigationStack', () => {
   describe('shouldIgnoreTouch', () => {
     it('returns false for null or undefined targets', () => {
       expect(shouldIgnoreTouch(null)).toBe(false);
@@ -60,6 +61,55 @@ describe('useSwipeNavigation', () => {
 
       expect(shouldIgnoreTouch(range)).toBe(true);
       expect(shouldIgnoreTouch(childOfNoSwipe)).toBe(true);
+    });
+  });
+
+  describe('navigationStack', () => {
+    it('pushes and pops handlers in LIFO order', () => {
+      navigationStack.clear();
+
+      const action1 = vi.fn();
+      const action2 = vi.fn();
+
+      navigationStack.push('level1', action1);
+      navigationStack.push('level2', action2);
+
+      expect(navigationStack.getDepth()).toBe(2);
+      expect(navigationStack.hasEntries()).toBe(true);
+
+      // Pop level 2
+      const handled2 = navigationStack.popAndExecute();
+      expect(handled2).toBe(true);
+      expect(action2).toHaveBeenCalledTimes(1);
+      expect(action1).not.toHaveBeenCalled();
+      expect(navigationStack.getDepth()).toBe(1);
+
+      // Pop level 1
+      const handled1 = navigationStack.popAndExecute();
+      expect(handled1).toBe(true);
+      expect(action1).toHaveBeenCalledTimes(1);
+      expect(navigationStack.getDepth()).toBe(0);
+
+      // Pop empty
+      const handledEmpty = navigationStack.popAndExecute();
+      expect(handledEmpty).toBe(false);
+    });
+
+    it('removes a handler by ID when unmounted', () => {
+      navigationStack.clear();
+
+      const actionA = vi.fn();
+      const actionB = vi.fn();
+
+      navigationStack.push('itemA', actionA);
+      navigationStack.push('itemB', actionB);
+
+      navigationStack.remove('itemB');
+      expect(navigationStack.getDepth()).toBe(1);
+
+      navigationStack.popAndExecute();
+      expect(actionA).toHaveBeenCalledTimes(1);
+      expect(actionB).not.toHaveBeenCalled();
     });
   });
 });

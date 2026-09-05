@@ -19,6 +19,7 @@ import { getCategorySuggestionForAmount, getFrequentPeople } from '../../service
 import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
 import { validateSplit, formatINR, distributeEqualSplit } from '../../services/accountingEngine';
 import { useSwipeNavigation } from '../../hooks/useSwipeNavigation';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 const STANDARD_CATEGORIES: { name: StandardCategory; emoji: string }[] = [
   { name: 'Food', emoji: '🍔' },
@@ -86,11 +87,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  useBackHandler('spent-modal', isOpen, onClose);
+
   useSwipeNavigation({
     onSwipeLeft: handleNextSpentTab,
     onSwipeRight: handlePrevSpentTab,
+    onEdgeBack: onClose,
     disabled: !isOpen,
-    threshold: 60,
+    threshold: 50,
     targetRef: modalContentRef,
   });
 

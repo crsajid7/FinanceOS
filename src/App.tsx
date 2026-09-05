@@ -14,6 +14,7 @@ import { ProfileModal } from './components/profile/ProfileModal';
 import { Transaction } from './types/finance';
 
 import { useSwipeNavigation } from './hooks/useSwipeNavigation';
+import { useBackHandler } from './hooks/useBackHandler';
 
 const MAIN_TABS: TabType[] = ['home', 'history', 'people', 'month'];
 
@@ -36,6 +37,11 @@ const MainAppContent: React.FC = () => {
     isWhereDidMoneyGoOpen ||
     isProfileOpen ||
     selectedTransaction !== null;
+
+  useBackHandler('transaction-detail-modal', !!selectedTransaction, () => setSelectedTransaction(null));
+  useBackHandler('where-money-go-modal', isWhereDidMoneyGoOpen, () => setIsWhereDidMoneyGoOpen(false));
+  useBackHandler('profile-modal', isProfileOpen, () => setIsProfileOpen(false));
+  useBackHandler('main-tab-subpage', currentTab !== 'home' && !isAnyModalOpen, () => setCurrentTab('home'));
 
   const handleNextTab = () => {
     const currentIndex = MAIN_TABS.indexOf(currentTab);

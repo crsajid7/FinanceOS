@@ -16,6 +16,7 @@ import { MoneyLocationId } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
 import { parseNaturalLanguage } from '../../services/naturalLanguageParser';
 import { useSwipeNavigation } from '../../hooks/useSwipeNavigation';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 interface MoneyModalProps {
   isOpen: boolean;
@@ -75,11 +76,14 @@ export const MoneyModal: React.FC<MoneyModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  useBackHandler('money-modal', isOpen, onClose);
+
   useSwipeNavigation({
     onSwipeLeft: handleNextMoneyTab,
     onSwipeRight: handlePrevMoneyTab,
+    onEdgeBack: onClose,
     disabled: !isOpen,
-    threshold: 60,
+    threshold: 50,
     targetRef: modalContentRef,
   });
 
