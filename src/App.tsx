@@ -41,7 +41,7 @@ const MainAppContent: React.FC = () => {
   useBackHandler('transaction-detail-modal', !!selectedTransaction, () => setSelectedTransaction(null));
   useBackHandler('where-money-go-modal', isWhereDidMoneyGoOpen, () => setIsWhereDidMoneyGoOpen(false));
   useBackHandler('profile-modal', isProfileOpen, () => setIsProfileOpen(false));
-  useBackHandler('main-tab-subpage', currentTab !== 'home' && !isAnyModalOpen, () => setCurrentTab('home'));
+  useBackHandler('main-tab-subpage', currentTab !== 'home', () => setCurrentTab('home'));
 
   const handleNextTab = () => {
     const currentIndex = MAIN_TABS.indexOf(currentTab);

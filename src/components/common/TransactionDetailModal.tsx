@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Trash2,
@@ -16,7 +16,6 @@ import {
 import { useFinance } from '../../context/FinanceContext';
 import { Transaction, MoneyLocationId } from '../../types/finance';
 import { formatINR } from '../../services/accountingEngine';
-import { useSwipeNavigation } from '../../hooks/useSwipeNavigation';
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null;
@@ -37,16 +36,6 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [note, setNote] = useState<string>('');
   const [date, setDate] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
-
-  const modalOverlayRef = useRef<HTMLDivElement>(null);
-
-  useSwipeNavigation({
-    onEdgeBack: onClose,
-    disabled: !transaction,
-    threshold: 50,
-    edgeThreshold: 30,
-    targetRef: modalOverlayRef,
-  });
 
   useEffect(() => {
     if (transaction) {
@@ -110,10 +99,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const isPositive = ['MONEY_RECEIVED', 'BORROWED_MONEY', 'REIMBURSEMENT', 'LOAN_REPAYMENT', 'REFUND', 'OPENING_BALANCE'].includes(transaction.type);
 
   return (
-    <div
-      ref={modalOverlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in"
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in">
       <div className="w-full max-w-sm theme-card rounded-3xl p-6 shadow-2xl space-y-4">
         
         {/* Header */}

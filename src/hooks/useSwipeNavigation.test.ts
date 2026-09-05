@@ -111,5 +111,42 @@ describe('useSwipeNavigation & navigationStack', () => {
       expect(actionA).toHaveBeenCalledTimes(1);
       expect(actionB).not.toHaveBeenCalled();
     });
+
+    it('correctly handles History -> Transaction Details -> back to History -> back to Home', () => {
+      navigationStack.clear();
+
+      const goToHome = vi.fn();
+      const closeTransactionDetails = vi.fn();
+
+      // 1. User navigates to History tab (currentTab !== 'home')
+      navigationStack.push('main-tab-subpage', goToHome);
+      expect(navigationStack.getDepth()).toBe(1);
+
+      // 2. User taps transaction to open Transaction Details
+      navigationStack.push('transaction-detail-modal', closeTransactionDetails);
+      expect(navigationStack.getDepth()).toBe(2);
+
+      // 3. User performs Android edge-back gesture or presses back button
+      // EXPECTED: Transaction Details closes, History remains visible
+      const backResult1 = navigationStack.popAndExecute();
+      expect(backResult1).toBe(true);
+      expect(closeTransactionDetails).toHaveBeenCalledTimes(1);
+      expect(goToHome).not.toHaveBeenCalled();
+      expect(navigationStack.getDepth()).toBe(1);
+      expect(navigationStack.hasEntries()).toBe(true);
+
+      // 4. User performs Android back gesture again
+      // EXPECTED: Navigates from History to Home
+      const backResult2 = navigationStack.popAndExecute();
+      expect(backResult2).toBe(true);
+      expect(goToHome).toHaveBeenCalledTimes(1);
+      expect(navigationStack.getDepth()).toBe(0);
+      expect(navigationStack.hasEntries()).toBe(false);
+
+      // 5. User performs Android back gesture again from Home
+      // EXPECTED: System allowed to exit app (no internal interception)
+      const backResult3 = navigationStack.popAndExecute();
+      expect(backResult3).toBe(false);
+    });
   });
 });
