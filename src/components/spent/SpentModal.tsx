@@ -35,7 +35,7 @@ interface SpentModalProps {
   onClose: () => void;
 }
 
-type Mode = 'EXPENSE' | 'SPLIT' | 'LENDING' | 'REPAY_FRIEND';
+type Mode = 'QUICK_ENTRY' | 'EXPENSE' | 'SPLIT' | 'LENDING' | 'REPAY_FRIEND';
 
 export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
   const { transactions, people, addTransaction, recordBorrowRepayment, accounts, verifyBalance, ensurePerson } = useFinance();
@@ -113,6 +113,14 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
       }
     }
   }, [numericAmount, mode, splitFriends.length]);
+
+  useEffect(() => {
+    if (mode === 'QUICK_ENTRY') {
+      setTimeout(() => {
+        nlInputRef.current?.focus();
+      }, 50);
+    }
+  }, [mode]);
 
   const frequentPeople = getFrequentPeople(transactions || [], people || [], 4);
   const lendDisplayPeople = React.useMemo(() => {
@@ -340,6 +348,7 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
             <h2 className="text-base font-black text-[var(--card-text-main)] tracking-tight">
+              {mode === 'QUICK_ENTRY' && 'Quick Entry'}
               {mode === 'EXPENSE' && 'Record Spending'}
               {mode === 'SPLIT' && 'Friend Split'}
               {mode === 'LENDING' && 'Lend Money'}
@@ -358,6 +367,18 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
         {/* Mode Selector Tabs */}
         <div className="flex border-b border-[var(--card-divider)] bg-black/5 dark:bg-black/5 px-3 pt-2 overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => setMode('QUICK_ENTRY')}
+            className={`px-3 py-2 text-xs font-black rounded-t-xl flex items-center justify-center space-x-1 whitespace-nowrap transition-all ${
+              mode === 'QUICK_ENTRY'
+                ? 'bg-black/10 dark:bg-black/10 text-[var(--card-text-main)] border-t-2 border-indigo-500 shadow-sm'
+                : 'text-[var(--card-text-sub)] hover:text-[var(--card-text-main)]'
+            }`}
+          >
+            <Wand2 className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Quick Entry</span>
+          </button>
           <button
             type="button"
             onClick={() => setMode('EXPENSE')}
@@ -409,62 +430,102 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
 
         {/* Modal Body - <div> replaces <form> to prevent browser IME auto-advance and implicit submission */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
-          
-          {/* Quick Entry Card - Always visible at top of modal body */}
-          <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1.5">
-                <Wand2 className="w-3.5 h-3.5" />
-                <span>Quick Entry</span>
-              </label>
-              <span className="text-[10px] text-indigo-400 font-mono">Type & press enter or parse</span>
+          {mode === 'QUICK_ENTRY' ? (
+            <div className="space-y-4 py-2">
+              <div className="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-indigo-500 flex items-center space-x-1.5">
+                    <Wand2 className="w-4 h-4" />
+                    <span>Quick Entry</span>
+                  </label>
+                  <span className="text-[10px] text-indigo-400 font-mono">Type & press enter or parse</span>
+                </div>
+                <div className="flex space-x-2">
+                  <input
+                    ref={nlInputRef}
+                    type="text"
+                    enterKeyHint="go"
+                    value={nlText}
+                    onChange={e => setNlText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.blur();
+                        handleParseNL();
+                      }
+                    }}
+                    onKeyUp={e => {
+                      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    onBeforeInput={(e: React.FormEvent<HTMLInputElement>) => {
+                      const nativeEvent = e.nativeEvent as InputEvent;
+                      if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                        handleParseNL();
+                      }
+                    }}
+                    placeholder="e.g. spent 100 on shawarma with cash"
+                    className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs text-[var(--card-text-main)] px-3.5 py-3 rounded-xl focus:outline-none focus:border-indigo-500 shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleParseNL}
+                    className="px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors flex-shrink-0"
+                    title="Parse Quick Entry"
+                  >
+                    <span>Parse</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {nlError && (
+                  <div className="flex items-center space-x-1.5 text-xs text-rose-500 font-semibold pt-1">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{nlError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Suggestions / Instructions */}
+              <div className="p-3.5 bg-black/5 dark:bg-black/5 rounded-2xl border border-[var(--card-divider)] space-y-2.5">
+                <span className="text-[11px] font-bold text-[var(--card-text-sub)] uppercase tracking-wider block font-mono">
+                  Examples:
+                </span>
+                <div className="space-y-1.5 text-xs text-[var(--card-text-sub)]">
+                  <div
+                    onClick={() => setNlText('spent 100 on shawarma with cash')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "spent 100 on shawarma with cash"
+                  </div>
+                  <div
+                    onClick={() => setNlText('paid 300 for dinner with Karthik and Mani')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "paid 300 for dinner with Karthik and Mani"
+                  </div>
+                  <div
+                    onClick={() => setNlText('lent 500 to Praveen')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "lent 500 to Praveen"
+                  </div>
+                  <div
+                    onClick={() => setNlText('repaid 200 to Mani')}
+                    className="p-2 rounded-lg bg-black/5 dark:bg-black/5 hover:text-[var(--card-text-main)] cursor-pointer font-mono text-[11px] transition-colors"
+                  >
+                    "repaid 200 to Mani"
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex space-x-2">
-              <input
-                ref={nlInputRef}
-                type="text"
-                tabIndex={-1}
-                enterKeyHint="go"
-                value={nlText}
-                onChange={e => setNlText(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.currentTarget.blur();
-                    handleParseNL();
-                  }
-                }}
-                onKeyUp={e => {
-                  if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.currentTarget.blur();
-                  }
-                }}
-                onBeforeInput={(e: React.FormEvent<HTMLInputElement>) => {
-                  const nativeEvent = e.nativeEvent as InputEvent;
-                  if (nativeEvent.inputType === 'insertLineBreak' || nativeEvent.inputType === 'insertParagraph') {
-                    e.preventDefault();
-                    (e.currentTarget as HTMLInputElement).blur();
-                    handleParseNL();
-                  }
-                }}
-                placeholder="e.g. spent 100 on shawarma with cash"
-                className="flex-1 bg-black/5 dark:bg-black/5 border border-[var(--card-divider)] text-xs text-[var(--card-text-main)] px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500 shadow-sm"
-              />
-              <button
-                type="button"
-                onClick={handleParseNL}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1 shadow-sm transition-colors"
-                title="Parse Quick Entry"
-              >
-                <span>Parse</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
-            {nlError && <p className="text-xs text-rose-500 font-semibold">{nlError}</p>}
-          </div>
+          ) : (
+            <>
 
           {/* Large Amount Input */}
           <div className="text-center py-2">
@@ -1020,27 +1081,29 @@ export const SpentModal: React.FC<SpentModalProps> = ({ isOpen, onClose }) => {
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={handleSaveTransaction}
-              disabled={isSubmitting}
-              className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-sm shadow-md active:scale-[0.99] transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50"
-            >
-              <Check className="w-4 h-4" />
-              <span>
-                {isSubmitting ? 'Saving...' : (
-                  mode === 'EXPENSE' ? 'Save Expense' :
-                  mode === 'SPLIT' ? 'Save Friend Split' :
-                  mode === 'LENDING' ? 'Record Loan' :
-                  mode === 'REPAY_FRIEND' ? 'Record Repayment' :
-                  'Save Transaction'
-                )}
-              </span>
-            </button>
-          </div>
-        </div>
+            {/* Action Buttons */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleSaveTransaction}
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-sm shadow-md active:scale-[0.99] transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {isSubmitting ? 'Saving...' : (
+                    mode === 'EXPENSE' ? 'Save Expense' :
+                    mode === 'SPLIT' ? 'Save Friend Split' :
+                    mode === 'LENDING' ? 'Record Loan' :
+                    mode === 'REPAY_FRIEND' ? 'Record Repayment' :
+                    'Save Transaction'
+                  )}
+                </span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       </div>
     </div>
