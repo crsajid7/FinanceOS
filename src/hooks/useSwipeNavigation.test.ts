@@ -1,18 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { isInteractiveOrScrollable } from './useSwipeNavigation';
+import { shouldIgnoreTouch } from './useSwipeNavigation';
 
 function createMockElement(
   tagName: string,
   attrs: Record<string, string> = {},
-  parent: any = null,
-  scrollWidth = 100,
-  clientWidth = 100
+  parent: any = null
 ) {
   const el = {
     tagName: tagName.toUpperCase(),
+    type: attrs.type || '',
     parentElement: parent,
-    scrollWidth,
-    clientWidth,
     getAttribute: (attr: string) => attrs[attr] ?? null,
     hasAttribute: (attr: string) => attr in attrs,
   };
@@ -20,56 +17,49 @@ function createMockElement(
 }
 
 describe('useSwipeNavigation', () => {
-  describe('isInteractiveOrScrollable', () => {
+  describe('shouldIgnoreTouch', () => {
     it('returns false for null or undefined targets', () => {
-      expect(isInteractiveOrScrollable(null)).toBe(false);
-      expect(isInteractiveOrScrollable(undefined as any)).toBe(false);
+      expect(shouldIgnoreTouch(null)).toBe(false);
+      expect(shouldIgnoreTouch(undefined as any)).toBe(false);
     });
 
-    it('returns false for ordinary divs and spans', () => {
+    it('returns false for ordinary divs, cards, spans, and text', () => {
       const div = createMockElement('div');
       const span = createMockElement('span', {}, div);
 
-      expect(isInteractiveOrScrollable(span)).toBe(false);
-      expect(isInteractiveOrScrollable(div)).toBe(false);
+      expect(shouldIgnoreTouch(span)).toBe(false);
+      expect(shouldIgnoreTouch(div)).toBe(false);
     });
 
-    it('returns true for inputs, buttons, textareas, and selects', () => {
-      const input = createMockElement('input');
+    it('returns false for text inputs, buttons, and textareas so swipe works anywhere', () => {
+      const input = createMockElement('input', { type: 'text' });
+      const numberInput = createMockElement('input', { type: 'number' });
       const button = createMockElement('button');
       const textarea = createMockElement('textarea');
-      const select = createMockElement('select');
 
-      expect(isInteractiveOrScrollable(input)).toBe(true);
-      expect(isInteractiveOrScrollable(button)).toBe(true);
-      expect(isInteractiveOrScrollable(textarea)).toBe(true);
-      expect(isInteractiveOrScrollable(select)).toBe(true);
+      expect(shouldIgnoreTouch(input)).toBe(false);
+      expect(shouldIgnoreTouch(numberInput)).toBe(false);
+      expect(shouldIgnoreTouch(button)).toBe(false);
+      expect(shouldIgnoreTouch(textarea)).toBe(false);
     });
 
-    it('returns true for child elements inside a button', () => {
+    it('returns false for buttons and icons inside buttons', () => {
       const button = createMockElement('button');
       const icon = createMockElement('svg', {}, button);
       const path = createMockElement('path', {}, icon);
 
-      expect(isInteractiveOrScrollable(path)).toBe(true);
-      expect(isInteractiveOrScrollable(icon)).toBe(true);
+      expect(shouldIgnoreTouch(path)).toBe(false);
+      expect(shouldIgnoreTouch(icon)).toBe(false);
+      expect(shouldIgnoreTouch(button)).toBe(false);
     });
 
-    it('returns true for elements with role button, slider, or tab', () => {
-      const roleButton = createMockElement('div', { role: 'button' });
-      const roleSlider = createMockElement('div', { role: 'slider' });
-      const roleTab = createMockElement('div', { role: 'tab' });
+    it('returns true only for range sliders or explicit data-no-swipe', () => {
+      const range = createMockElement('input', { type: 'range' });
+      const noSwipe = createMockElement('div', { 'data-no-swipe': 'true' });
+      const childOfNoSwipe = createMockElement('div', {}, noSwipe);
 
-      expect(isInteractiveOrScrollable(roleButton)).toBe(true);
-      expect(isInteractiveOrScrollable(roleSlider)).toBe(true);
-      expect(isInteractiveOrScrollable(roleTab)).toBe(true);
-    });
-
-    it('returns true for elements with data-no-swipe', () => {
-      const parent = createMockElement('div', { 'data-no-swipe': 'true' });
-      const child = createMockElement('div', {}, parent);
-
-      expect(isInteractiveOrScrollable(child)).toBe(true);
+      expect(shouldIgnoreTouch(range)).toBe(true);
+      expect(shouldIgnoreTouch(childOfNoSwipe)).toBe(true);
     });
   });
 });

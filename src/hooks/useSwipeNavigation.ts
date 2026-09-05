@@ -4,52 +4,25 @@ export interface UseSwipeNavigationOptions {
   onSwipeLeft?: () => void;  // Finger moved RIGHT -> LEFT: NEXT page / tab
   onSwipeRight?: () => void; // Finger moved LEFT -> RIGHT: PREVIOUS page / tab
   disabled?: boolean;
-  threshold?: number;       // Minimum horizontal distance in px, default 60
-  targetRef?: React.RefObject<HTMLElement | null>; // Attach to specific container; if omitted, attaches to window
+  threshold?: number;       // Minimum horizontal distance in px, default 50
+  targetRef?: React.RefObject<HTMLElement | null>; // Container element; if omitted, attaches to window
 }
 
 /**
- * Checks if touch event originated inside an interactive control
- * or a horizontally scrollable container.
+ * Checks if touch event should be ignored (e.g. range slider or explicit data-no-swipe)
  */
-export function isInteractiveOrScrollable(target: EventTarget | null): boolean {
+export function shouldIgnoreTouch(target: EventTarget | null): boolean {
   if (!target || typeof (target as any).tagName !== 'string') return false;
 
   let el: any = target;
   while (el && (typeof document === 'undefined' || (el !== document.body && el !== document.documentElement))) {
     const tagName = typeof el.tagName === 'string' ? el.tagName.toLowerCase() : '';
 
-    // 1. Interactive controls and form inputs
     if (
-      tagName === 'input' ||
-      tagName === 'textarea' ||
-      tagName === 'select' ||
-      tagName === 'button' ||
-      tagName === 'a' ||
-      (typeof el.getAttribute === 'function' && (
-        el.getAttribute('role') === 'button' ||
-        el.getAttribute('role') === 'slider' ||
-        el.getAttribute('role') === 'tab' ||
-        el.getAttribute('contenteditable') === 'true'
-      )) ||
+      (tagName === 'input' && el.type === 'range') ||
       (typeof el.hasAttribute === 'function' && el.hasAttribute('data-no-swipe'))
     ) {
       return true;
-    }
-
-    // 2. Horizontally scrollable elements (chips, tabs bar, horizontal carousels)
-    try {
-      if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
-        const style = window.getComputedStyle(el);
-        const overflowX = style.overflowX;
-        if (overflowX === 'auto' || overflowX === 'scroll') {
-          if (el.scrollWidth > el.clientWidth + 4) {
-            return true;
-          }
-        }
-      }
-    } catch {
-      // ignore
     }
 
     el = el.parentElement;
@@ -64,15 +37,16 @@ export function isInteractiveOrScrollable(target: EventTarget | null): boolean {
  * Rules:
  * - Swipe right -> left (deltaX < 0): NEXT
  * - Swipe left -> right (deltaX > 0): PREVIOUS
- * - Dominant horizontal movement required (ratio >= 1.5 vs vertical)
+ * - Works anywhere on screen (inputs, buttons, cards, text, background)
  * - Vertical scroll gestures (deltaY dominant) are safely ignored
- * - Interacting with inputs, buttons, or scrollable chips is protected
+ * - Taps and button clicks continue to work normally
+ * - Once swipe triggers, subsequent synthetic click is swallowed
  */
 export function useSwipeNavigation({
   onSwipeLeft,
   onSwipeRight,
   disabled = false,
-  threshold = 60,
+  threshold = 50,
   targetRef,
 }: UseSwipeNavigationOptions) {
   const onSwipeLeftRef = useRef(onSwipeLeft);
@@ -84,7 +58,9 @@ export function useSwipeNavigation({
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const isIgnoredRef = useRef(false);
+  const isVerticalScrollRef = useRef(false);
   const hasTriggeredRef = useRef(false);
+  const swipeJustTriggeredRef = useRef(false);
 
   useEffect(() => {
     if (disabled) return;
@@ -98,19 +74,20 @@ export function useSwipeNavigation({
         return;
       }
 
-      if (isInteractiveOrScrollable(e.target)) {
+      if (shouldIgnoreTouch(e.target)) {
         isIgnoredRef.current = true;
         return;
       }
 
       isIgnoredRef.current = false;
+      isVerticalScrollRef.current = false;
       hasTriggeredRef.current = false;
       startXRef.current = e.touches[0].clientX;
       startYRef.current = e.touches[0].clientY;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (isIgnoredRef.current || hasTriggeredRef.current || e.touches.length !== 1) {
+      if (isIgnoredRef.current || hasTriggeredRef.current || isVerticalScrollRef.current || e.touches.length !== 1) {
         return;
       }
 
@@ -121,16 +98,22 @@ export function useSwipeNavigation({
 
       // Vertical scroll protection:
       // If finger moved vertically by > 20px and vertical movement is greater than horizontal,
-      // it's a vertical scroll. Lock out swipe navigation for this touch.
+      // it's a vertical scroll. Lock out swipe navigation for this gesture.
       if (Math.abs(deltaY) > 20 && Math.abs(deltaY) >= Math.abs(deltaX)) {
-        isIgnoredRef.current = true;
+        isVerticalScrollRef.current = true;
         return;
       }
 
       // Horizontal swipe detection:
-      // Must exceed threshold and dominate vertical movement by at least 1.5x
-      if (Math.abs(deltaX) >= threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      // Dominates vertical movement and exceeds threshold
+      if (Math.abs(deltaX) >= threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
         hasTriggeredRef.current = true;
+        swipeJustTriggeredRef.current = true;
+
+        // Dismiss keyboard / blur active element on intentional swipe
+        if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
 
         if (deltaX < 0) {
           // Swipe right to left -> NEXT
@@ -139,24 +122,42 @@ export function useSwipeNavigation({
           // Swipe left to right -> PREVIOUS
           onSwipeRightRef.current?.();
         }
+
+        setTimeout(() => {
+          swipeJustTriggeredRef.current = false;
+        }, 200);
       }
     };
 
     const handleTouchEnd = () => {
       isIgnoredRef.current = false;
+      isVerticalScrollRef.current = false;
       hasTriggeredRef.current = false;
+      setTimeout(() => {
+        swipeJustTriggeredRef.current = false;
+      }, 100);
     };
 
-    targetElement.addEventListener('touchstart', handleTouchStart as EventListener, { passive: true });
-    targetElement.addEventListener('touchmove', handleTouchMove as EventListener, { passive: true });
-    targetElement.addEventListener('touchend', handleTouchEnd as EventListener, { passive: true });
-    targetElement.addEventListener('touchcancel', handleTouchEnd as EventListener, { passive: true });
+    const handleCaptureClick = (e: MouseEvent) => {
+      if (swipeJustTriggeredRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        swipeJustTriggeredRef.current = false;
+      }
+    };
+
+    targetElement.addEventListener('touchstart', handleTouchStart as EventListener, { capture: true, passive: true });
+    targetElement.addEventListener('touchmove', handleTouchMove as EventListener, { capture: true, passive: true });
+    targetElement.addEventListener('touchend', handleTouchEnd as EventListener, { capture: true, passive: true });
+    targetElement.addEventListener('touchcancel', handleTouchEnd as EventListener, { capture: true, passive: true });
+    targetElement.addEventListener('click', handleCaptureClick as EventListener, { capture: true });
 
     return () => {
-      targetElement.removeEventListener('touchstart', handleTouchStart as EventListener);
-      targetElement.removeEventListener('touchmove', handleTouchMove as EventListener);
-      targetElement.removeEventListener('touchend', handleTouchEnd as EventListener);
-      targetElement.removeEventListener('touchcancel', handleTouchEnd as EventListener);
+      targetElement.removeEventListener('touchstart', handleTouchStart as EventListener, { capture: true });
+      targetElement.removeEventListener('touchmove', handleTouchMove as EventListener, { capture: true });
+      targetElement.removeEventListener('touchend', handleTouchEnd as EventListener, { capture: true });
+      targetElement.removeEventListener('touchcancel', handleTouchEnd as EventListener, { capture: true });
+      targetElement.removeEventListener('click', handleCaptureClick as EventListener, { capture: true });
     };
   }, [disabled, threshold, targetRef?.current]);
 }
